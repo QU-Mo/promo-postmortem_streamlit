@@ -4,8 +4,7 @@ from google.cloud import bigquery
 import pandas as pd
 
 
-from raw_data import FETCH_RAW_DATA_DEF, build_group_period_tables, fetch_raw_data
-
+from raw_data import build_group_period_tables, build_raw_data_sql, fetch_raw_data
 
 
 st.set_page_config(page_title="Promo Post-Mortem", layout="wide")
@@ -18,6 +17,7 @@ def initialize_session_state() -> None:
         st.session_state["sql"] = None
     if "group_tables" not in st.session_state:
         st.session_state["group_tables"] = {}
+
 
 def normalize_date_range(selected_range) -> list[date]:
     if isinstance(selected_range, tuple) and len(selected_range) == 2:
@@ -33,6 +33,7 @@ def normalize_date_range(selected_range) -> list[date]:
         start, end = end, start
 
     return [start + timedelta(days=offset) for offset in range((end - start).days + 1)]
+
 
 def build_store_options(country: str) -> dict[str, list[str]]:
     if country == "AT":
@@ -50,6 +51,30 @@ def build_store_options(country: str) -> dict[str, list[str]]:
     }
 
 
+def build_promo_impact_table(
+    funnel_tables: dict[str, pd.DataFrame],
+    selected_control_group: str,
+    selected_testing_group: str,
+) -> pd.DataFrame:
+    control_df = funnel_tables.get(selected_control_group)
+    testing_df = funnel_tables.get(selected_testing_group)
+    if control_df is None or testing_df is None:
+        return pd.DataFrame()
+
+    control_pct = control_df[["KPI", "% Diff (Promo vs Baseline)"]].rename(
+        columns={"% Diff (Promo vs Baseline)": f"{selected_control_group} %Diff"}
+    )
+    testing_pct = testing_df[["KPI", "% Diff (Promo vs Baseline)"]].rename(
+        columns={"% Diff (Promo vs Baseline)": f"{selected_testing_group} %Diff"}
+    )
+
+    merged = testing_pct.merge(control_pct, on="KPI", how="inner")
+    merged["Promo Impact"] = (
+        merged[f"{selected_testing_group} %Diff"] - merged[f"{selected_control_group} %Diff"]
+    )
+    return merged
+
+
 initialize_session_state()
 
 
@@ -59,6 +84,7 @@ RATE_KPIS = {
     "margin",
     "RP revenue share",
     "promo revenue share",
+    "Promo Impact",
 }
 
 
@@ -88,6 +114,18 @@ def format_funnel_table(table_df: pd.DataFrame) -> pd.DataFrame:
     )
     return formatted_df
 
+
+def format_promo_impact_table(table_df: pd.DataFrame) -> pd.DataFrame:
+    formatted_df = table_df.copy()
+    percent_cols = [col for col in formatted_df.columns if col.endswith("%Diff") or col == "Promo Impact"]
+    for col in percent_cols:
+        formatted_df[col] = formatted_df.apply(
+            lambda row: _format_kpi_value("Promo Impact", row[col], is_pct_diff=True),
+            axis=1,
+        )
+    return formatted_df
+
+
 st.title("Promo Post Mortem")
 
 st.sidebar.header("Configuration")
@@ -105,7 +143,7 @@ vat = st.sidebar.number_input("VAT", min_value=0.0, value=1.0, step=0.01, format
 
 store_options = build_store_options(traffic_country)
 
-control_group_1_select_all = st.sidebar.checkbox("Select all - control group 1", value=True)
+control_group_1_select_all = st.sidebar.checkbox("Select all stores - control group 1", value=True)
 if control_group_1_select_all:
     control_group_1 = store_options["control_group_1"]
 else:
@@ -115,7 +153,7 @@ else:
         default=[],
     )
 
-control_group_2_select_all = st.sidebar.checkbox("Select all - control group 2", value=True)
+control_group_2_select_all = st.sidebar.checkbox("Select all stores - control group 2", value=True)
 if control_group_2_select_all:
     control_group_2 = store_options["control_group_2"]
 else:
@@ -125,7 +163,7 @@ else:
         default=[],
     )
 
-testing_group_1_select_all = st.sidebar.checkbox("Select all - testing group 1", value=True)
+testing_group_1_select_all = st.sidebar.checkbox("Select all stores - testing group 1", value=True)
 if testing_group_1_select_all:
     testing_group_1 = store_options["testing_group_1"]
 else:
@@ -134,7 +172,7 @@ else:
         options=store_options["testing_group_1"],
         default=[],
     )
-testing_group_2_select_all = st.sidebar.checkbox("Select all - testing group 2", value=True)
+testing_group_2_select_all = st.sidebar.checkbox("Select all stores - testing group 2", value=True)
 if testing_group_2_select_all:
     testing_group_2 = store_options["testing_group_2"]
 else:
@@ -159,7 +197,6 @@ baseline_dates = normalize_date_range(baseline_range)
 promo_dates = normalize_date_range(promo_range)
 selected_dates = sorted(set(baseline_dates + promo_dates))
 
-
 if st.sidebar.button("Run"):
     if not selected_dates:
         st.warning("Please select at least one date in baseline or promo period.")
@@ -168,10 +205,9 @@ if st.sidebar.button("Run"):
     if not any([control_group_1, control_group_2, testing_group_1, testing_group_2]):
         st.warning("Please select at least one store code in any group.")
         st.stop()
-   
+
     bq_client = bigquery.Client()
     try:
-        
         df = fetch_raw_data(
             traffic_business_unit=traffic_business_unit,
             traffic_country=traffic_country,
@@ -199,8 +235,6 @@ if st.sidebar.button("Run"):
         st.session_state["group_tables"] = {}
         st.error(f"Error running query: {e}")
 
-
-
 if st.session_state.get("group_tables"):
     st.subheader("Funnel Analysis")
     st.caption("excelude Sunday")
@@ -212,12 +246,67 @@ if st.session_state.get("group_tables"):
     }
 
     funnel_tables = st.session_state["group_tables"].get("funnel_tables", {})
-    for table_name, table_df in funnel_tables.items():
-        matching_group = table_name if table_name in group_store_map else None
-        selected_codes = group_store_map.get(matching_group, [])
-        st.markdown(f"**{table_name}**  ")
+    control_col, vs_col, testing_col = st.columns([3, 1, 3])
+    with control_col:
+        selected_control_group = st.selectbox(
+            "Control",
+            options=["Control Group 1", "Control Group 2"],
+            index=0,
+        )
+    with vs_col:
+        st.markdown("### VS")
+    with testing_col:
+        selected_testing_group = st.selectbox(
+            "Testing",
+            options=["Testing Group 1", "Testing Group 2"],
+            index=0,
+        )
+
+    selected_groups = [selected_control_group, selected_testing_group]
+    for table_name in selected_groups:
+        table_df = funnel_tables.get(table_name, pd.DataFrame())
+        selected_codes = group_store_map.get(table_name, [])
+        st.markdown(f"**{table_name}**")
         st.caption(f"Selected store code(s): {', '.join(selected_codes) if selected_codes else 'None'}")
         st.dataframe(format_funnel_table(table_df), use_container_width=True)
 
-with st.expander("def fetch_raw_data"):
-    st.code(FETCH_RAW_DATA_DEF, language="python")
+    promo_impact_df = build_promo_impact_table(
+        funnel_tables=funnel_tables,
+        selected_control_group=selected_control_group,
+        selected_testing_group=selected_testing_group,
+    )
+    st.markdown("**Promo Impact**")
+    st.caption(
+        f"Promo Impact = {selected_testing_group} %Diff (Promo vs Baseline) - {selected_control_group} %Diff (Promo vs Baseline)"
+    )
+    st.dataframe(format_promo_impact_table(promo_impact_df), use_container_width=True)
+
+    weekday_absorption = st.session_state["group_tables"].get("weekday_absorption", pd.DataFrame())
+    chart_df = weekday_absorption[weekday_absorption["group"].isin(selected_groups)].copy()
+    if not chart_df.empty:
+        st.markdown("**Avg Store Absorption Rate by Weekday (Promo Period)**")
+        st.line_chart(
+            chart_df,
+            x="weekday",
+            y="avg_store_absorption_rate",
+            color="group",
+            use_container_width=True,
+        )
+
+if st.session_state.get("data") is not None:
+    sql_text, _ = build_raw_data_sql(
+        traffic_business_unit=traffic_business_unit,
+        traffic_country=traffic_country,
+        order_company_name_short=order_company_name_short,
+        order_channel=order_channel,
+        order_country=order_country,
+        selected_dates=selected_dates,
+    )
+    st.download_button(
+        "Download build_raw_data_sql result table (CSV)",
+        data=st.session_state["data"].to_csv(index=False),
+        file_name="build_raw_data_sql_result.csv",
+        mime="text/csv",
+    )
+    with st.expander("build_raw_data_sql (generated SQL)"):
+        st.code(sql_text, language="sql")

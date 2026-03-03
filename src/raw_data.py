@@ -134,7 +134,6 @@ def build_group_period_tables(
     promo_dates: list[date],
     vat: float,
 ) -> dict[str, pd.DataFrame]:
-     
     """Build raw subset tables and funnel-analysis summary tables by group/period."""
 
     if raw_df.empty:
@@ -143,8 +142,6 @@ def build_group_period_tables(
     df = raw_df.copy()
     df["ordered_date"] = pd.to_datetime(df["ordered_date"]).dt.date
     df["store_code"] = df["store_code"].astype(str).str.zfill(4)
-
-    
     df["weekday"] = pd.to_datetime(df["ordered_date"]).dt.day_name()
 
     group_config = {
@@ -158,7 +155,6 @@ def build_group_period_tables(
         "Promo Period": promo_dates,
     }
 
-
     def _subset(store_codes: list[str], period_dates: list[date]) -> pd.DataFrame:
         if not store_codes or not period_dates:
             return pd.DataFrame(columns=df.columns)
@@ -167,7 +163,6 @@ def build_group_period_tables(
             df["store_code"].isin(normalized_store_codes)
             & df["ordered_date"].isin(period_dates)
         ].sort_values(["ordered_date", "store_code"])
-    
 
     numeric_sum_cols = [
         "pedestrian_footfall",
@@ -305,23 +300,53 @@ def build_group_period_tables(
             )
         return pd.DataFrame(rows)
 
+    def _weekday_absorption_table(group_name: str, subset_df: pd.DataFrame) -> pd.DataFrame:
+        if subset_df.empty:
+            return pd.DataFrame(columns=["weekday", "group", "avg_store_absorption_rate"])
+
+        weekday_order = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+        filtered_df = subset_df[subset_df["weekday"] != "Sunday"].copy()
+        if filtered_df.empty:
+            return pd.DataFrame(columns=["weekday", "group", "avg_store_absorption_rate"])
+
+        weekday_df = (
+            filtered_df.groupby("weekday", dropna=False)["store_absorption_rate"]
+            .mean()
+            .reset_index(name="avg_store_absorption_rate")
+        )
+        weekday_df["weekday"] = pd.Categorical(weekday_df["weekday"], categories=weekday_order, ordered=True)
+        weekday_df = weekday_df.sort_values("weekday")
+        weekday_df["group"] = group_name
+        return weekday_df[["weekday", "group", "avg_store_absorption_rate"]]
+
     subset_tables: dict[str, pd.DataFrame] = {}
     funnel_tables: dict[str, pd.DataFrame] = {}
+    period_metrics: dict[str, dict[str, dict[str, float]]] = {}
+    weekday_absorption_frames: list[pd.DataFrame] = []
 
     for group_name, stores in group_config.items():
         metrics_by_period: dict[str, dict[str, float]] = {}
+        promo_subset = pd.DataFrame(columns=df.columns)
         for period_name, period_dates in period_config.items():
             table_name = f"{group_name} - {period_name}"
             period_subset = _subset(stores, period_dates)
             subset_tables[table_name] = period_subset
             metrics_by_period[period_name] = _period_metrics(period_subset)
+            if period_name == "Promo Period":
+                promo_subset = period_subset
 
+        period_metrics[group_name] = metrics_by_period
         funnel_tables[group_name] = _funnel_table(
             baseline_metrics=metrics_by_period["Baseline Period"],
             promo_metrics=metrics_by_period["Promo Period"],
         )
+        weekday_absorption_frames.append(_weekday_absorption_table(group_name, promo_subset))
+
+    weekday_absorption = pd.concat(weekday_absorption_frames, ignore_index=True)
 
     return {
-         "subset_tables": subset_tables,
+        "subset_tables": subset_tables,
         "funnel_tables": funnel_tables,
-        }
+        "period_metrics": period_metrics,
+        "weekday_absorption": weekday_absorption,
+    }
