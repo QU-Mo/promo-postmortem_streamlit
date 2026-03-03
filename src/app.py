@@ -177,7 +177,7 @@ def build_weekday_chart(
     base = alt.Chart(chart_df).encode(
         x=alt.X("weekday:N", sort=["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"], axis=alt.Axis(labelAngle=0, title=None)),
         y=alt.Y(f"{kpi_col}:Q", axis=alt.Axis(format=y_axis_format, title=None)),
-        color=alt.Color("group:N", legend=alt.Legend(orient="right", direction="vertical", title=None)),
+        color=alt.Color("group:N", legend=alt.Legend(orient="bottom", direction="horizontal", title=None)),
     )
 
     lines = base.mark_line(point=True)
