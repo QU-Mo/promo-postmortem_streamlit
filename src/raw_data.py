@@ -17,7 +17,7 @@ def build_raw_data_sql(
     sql = f"""
     WITH traffic_date AS (
       SELECT
-        visited_on AS ordered_date,
+        DATE(visited_on) AS ordered_date,
         country,
         business_unit,
         LPAD(CAST(store_code AS STRING), 4, '0') AS store_code,
@@ -43,12 +43,15 @@ def build_raw_data_sql(
         store_name,
         ROUND(COALESCE(SUM(revenue_after_cancellations_and_returns_eur_incl_forecast), 0), 2) AS total_revenue,
         ROUND(COALESCE(SUM(CASE WHEN article_price_red_eur IS NOT NULL THEN revenue_after_cancellations_and_returns_eur_incl_forecast END), 0), 2) AS total_RP_revenue,
+        ROUND(COALESCE(SUM(CASE WHEN has_promotion THEN revenue_after_cancellations_and_returns_eur_incl_forecast END), 0), 2) AS total_promo_revenue,
         ROUND(COALESCE(SUM(quantity_ordered_after_cancellations_and_returns_incl_forecast), 0), 2) AS total_quantity,
         ROUND(COALESCE(SUM(CASE WHEN article_price_red_eur IS NOT NULL THEN quantity_ordered_after_cancellations_and_returns_incl_forecast END), 0), 2) AS total_RP_quantity,
+        ROUND(COALESCE(SUM(CASE WHEN has_promotion THEN quantity_ordered_after_cancellations_and_returns_incl_forecast END), 0), 2) AS total_promo_quantity,
         ROUND(COALESCE(SUM(profit_contribution_1_eur_incl_forecast), 0), 2) AS total_PC1,
         ROUND(COALESCE(SUM(CASE WHEN article_price_red_eur IS NOT NULL THEN profit_contribution_1_eur_incl_forecast END), 0), 2) AS total_RP_PC1
       FROM `{order_table}` AS multichannel_orders
       LEFT JOIN UNNEST(multichannel_orders.order_items) AS multichannel_orders__order_items
+      LEFT JOIN UNNEST(promotions) as multichannel_orders__order_items__promotions
       WHERE multichannel_orders.channel = @order_channel
         AND multichannel_orders.company_name_short = @order_company_name_short
         AND multichannel_orders.country = @order_country
@@ -69,7 +72,7 @@ def build_raw_data_sql(
       LEFT JOIN store_level_mco_data
         ON traffic_date.ordered_date = store_level_mco_data.ordered_date
         AND traffic_date.country = store_level_mco_data.country
-        AND traffic_date.business_unit = store_level_mco_data.company_name_short
+        AND SPLIT(traffic_date.business_unit, ' ')[OFFSET(0)] = store_level_mco_data.company_name_short
         AND traffic_date.store_code = store_level_mco_data.store_code
         AND traffic_date.store_name = store_level_mco_data.store_name
     )
