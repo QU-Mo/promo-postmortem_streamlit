@@ -1,4 +1,5 @@
 from datetime import date
+import pandas as pd
 from google.cloud import bigquery
 
 
@@ -112,3 +113,41 @@ def fetch_raw_data(
     job_config = bigquery.QueryJobConfig(query_parameters=params)
     query_job = bq_client.query(sql, job_config=job_config)
     return query_job.to_dataframe()
+
+
+def build_group_period_tables(
+    raw_df: pd.DataFrame,
+    control_group_1: list[str],
+    control_group_2: list[str],
+    testing_group_1: list[str],
+    testing_group_2: list[str],
+    baseline_dates: list[date],
+    promo_dates: list[date],
+) -> dict[str, pd.DataFrame]:
+    """Split raw data into tables by group and period."""
+
+    if raw_df.empty:
+        return {}
+
+    df = raw_df.copy()
+    df["ordered_date"] = pd.to_datetime(df["ordered_date"]).dt.date
+    df["store_code"] = df["store_code"].astype(str)
+
+    def _subset(store_codes: list[str], period_dates: list[date]) -> pd.DataFrame:
+        if not store_codes or not period_dates:
+            return pd.DataFrame(columns=df.columns)
+        return df[
+            df["store_code"].isin(store_codes)
+            & df["ordered_date"].isin(period_dates)
+        ].sort_values(["ordered_date", "store_code"])
+
+    return {
+        "Control Group 1 - Baseline Period": _subset(control_group_1, baseline_dates),
+        "Control Group 2 - Baseline Period": _subset(control_group_2, baseline_dates),
+        "Control Group 1 - Promo Period": _subset(control_group_1, promo_dates),
+        "Control Group 2 - Promo Period": _subset(control_group_2, promo_dates),
+        "Testing Group 1 - Baseline Period": _subset(testing_group_1, baseline_dates),
+        "Testing Group 2 - Baseline Period": _subset(testing_group_2, baseline_dates),
+        "Testing Group 1 - Promo Period": _subset(testing_group_1, promo_dates),
+        "Testing Group 2 - Promo Period": _subset(testing_group_2, promo_dates),
+    }
