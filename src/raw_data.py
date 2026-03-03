@@ -64,8 +64,10 @@ def build_raw_data_sql(
         channel,
         total_revenue,
         total_RP_revenue,
+        total_promo_revenue,
         total_quantity,
         total_RP_quantity,
+        total_promo_quantity,
         total_PC1,
         total_RP_PC1
       FROM traffic_date
