@@ -6,7 +6,6 @@ import pandas as pd
 
 from raw_data import (
     build_group_period_tables,
-    build_raw_data_sql,
     fetch_raw_data,
     fetch_store_code_options,
 )
@@ -206,6 +205,11 @@ else:
         default=[],
     )
 
+control_group_1_note = st.sidebar.text_input("Control Group 1 description", value="")
+control_group_2_note = st.sidebar.text_input("Control Group 2 description", value="")
+testing_group_1_note = st.sidebar.text_input("Testing Group 1 description", value="")
+testing_group_2_note = st.sidebar.text_input("Testing Group 2 description", value="")
+
 baseline_range = st.sidebar.date_input(
     "baseline period",
     value=(date.today() - timedelta(days=7), date.today() - timedelta(days=1)),
@@ -268,6 +272,16 @@ if st.session_state.get("group_tables"):
         "Testing Group 1": testing_group_1,
         "Testing Group 2": testing_group_2,
     }
+    group_description_map = {
+        "Control Group 1": control_group_1_note,
+        "Control Group 2": control_group_2_note,
+        "Testing Group 1": testing_group_1_note,
+        "Testing Group 2": testing_group_2_note,
+    }
+
+    def _group_label(group_name: str) -> str:
+        desc = group_description_map.get(group_name, "").strip()
+        return f"{group_name} ({desc})" if desc else group_name
 
     funnel_tables = st.session_state["group_tables"].get("funnel_tables", {})
     control_col, vs_col, testing_col = st.columns([3, 1, 3])
@@ -287,12 +301,19 @@ if st.session_state.get("group_tables"):
         )
 
     selected_groups = [selected_control_group, selected_testing_group]
-    for table_name in selected_groups:
-        table_df = funnel_tables.get(table_name, pd.DataFrame())
-        selected_codes = group_store_map.get(table_name, [])
-        st.markdown(f"**{table_name}**")
-        st.caption(f"Selected store code(s): {', '.join(selected_codes) if selected_codes else 'None'}")
-        st.dataframe(format_funnel_table(table_df), use_container_width=True)
+    control_table_col, _, testing_table_col = st.columns([3, 1, 3])
+    with control_table_col:
+        control_df = funnel_tables.get(selected_control_group, pd.DataFrame())
+        control_codes = group_store_map.get(selected_control_group, [])
+        st.markdown(f"**{_group_label(selected_control_group)}**")
+        st.caption(f"Selected store code(s): {', '.join(control_codes) if control_codes else 'None'}")
+        st.dataframe(format_funnel_table(control_df), use_container_width=True)
+    with testing_table_col:
+        testing_df = funnel_tables.get(selected_testing_group, pd.DataFrame())
+        testing_codes = group_store_map.get(selected_testing_group, [])
+        st.markdown(f"**{_group_label(selected_testing_group)}**")
+        st.caption(f"Selected store code(s): {', '.join(testing_codes) if testing_codes else 'None'}")
+        st.dataframe(format_funnel_table(testing_df), use_container_width=True)
 
     promo_impact_df = build_promo_impact_table(
         funnel_tables=funnel_tables,
@@ -301,13 +322,14 @@ if st.session_state.get("group_tables"):
     )
     st.markdown("**Promo Impact**")
     st.caption(
-        f"Promo Impact = {selected_testing_group} %Diff (Promo vs Baseline) - {selected_control_group} %Diff (Promo vs Baseline)"
+        f"Promo Impact = {_group_label(selected_testing_group)} %Diff (Promo vs Baseline) - {_group_label(selected_control_group)} %Diff (Promo vs Baseline)"
     )
     st.dataframe(format_promo_impact_table(promo_impact_df), use_container_width=True)
 
-    weekday_absorption = st.session_state["group_tables"].get("weekday_absorption", pd.DataFrame())
-    chart_df = weekday_absorption[weekday_absorption["group"].isin(selected_groups)].copy()
+    weekday_kpis = st.session_state["group_tables"].get("weekday_kpis", pd.DataFrame())
+    chart_df = weekday_kpis[weekday_kpis["group"].isin(selected_groups)].copy()
     if not chart_df.empty:
+        chart_df["group"] = chart_df["group"].map(_group_label)
         st.markdown("**Avg Store Absorption Rate by Weekday (Promo Period)**")
         st.line_chart(
             chart_df,
@@ -317,20 +339,33 @@ if st.session_state.get("group_tables"):
             use_container_width=True,
         )
 
+        extra_weekday_kpis = [
+            ("Cal Store Conversion Rate by Weekday (Promo Period)", "cal_store_conversion_rate"),
+            ("Total Orders by Weekday (Promo Period)", "total_orders"),
+            ("AOV by Weekday (Promo Period)", "AOV"),
+            ("Total Quantity by Weekday (Promo Period)", "total_quantity"),
+            ("Price per Item by Weekday (Promo Period)", "price_per_item"),
+            ("Total Revenue by Weekday (Promo Period)", "total_revenue"),
+            ("Total PC1 by Weekday (Promo Period)", "total_PC1"),
+            ("Margin by Weekday (Promo Period)", "margin"),
+            ("RP Revenue Share by Weekday (Promo Period)", "RP_revenue_share"),
+            ("Promo Revenue Share by Weekday (Promo Period)", "promo_revenue_share"),
+        ]
+
+        for title, kpi_col in extra_weekday_kpis:
+            st.markdown(f"**{title}**")
+            st.line_chart(
+                chart_df,
+                x="weekday",
+                y=kpi_col,
+                color="group",
+                use_container_width=True,
+            )
+
 if st.session_state.get("data") is not None:
-    sql_text, _ = build_raw_data_sql(
-        traffic_business_unit=traffic_business_unit,
-        traffic_country=traffic_country,
-        order_company_name_short=order_company_name_short,
-        order_channel=order_channel,
-        order_country=order_country,
-        selected_dates=selected_dates,
-    )
     st.download_button(
         "Download build_raw_data_sql result table (CSV)",
         data=st.session_state["data"].to_csv(index=False),
         file_name="build_raw_data_sql_result.csv",
         mime="text/csv",
     )
-    with st.expander("build_raw_data_sql (generated SQL)"):
-        st.code(sql_text, language="sql")

@@ -346,29 +346,100 @@ def build_group_period_tables(
             )
         return pd.DataFrame(rows)
 
-    def _weekday_absorption_table(group_name: str, subset_df: pd.DataFrame) -> pd.DataFrame:
+    def _weekday_kpi_table(group_name: str, subset_df: pd.DataFrame) -> pd.DataFrame:
         if subset_df.empty:
-            return pd.DataFrame(columns=["weekday", "group", "avg_store_absorption_rate"])
+            return pd.DataFrame(
+                columns=[
+                    "weekday",
+                    "group",
+                    "avg_store_absorption_rate",
+                    "cal_store_conversion_rate",
+                    "total_orders",
+                    "AOV",
+                    "total_quantity",
+                    "price_per_item",
+                    "total_revenue",
+                    "total_PC1",
+                    "margin",
+                    "RP_revenue_share",
+                    "promo_revenue_share",
+                ]
+            )
 
         weekday_order = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
         filtered_df = subset_df[subset_df["weekday"] != "Sunday"].copy()
         if filtered_df.empty:
-            return pd.DataFrame(columns=["weekday", "group", "avg_store_absorption_rate"])
+            return pd.DataFrame(
+                columns=[
+                    "weekday",
+                    "group",
+                    "avg_store_absorption_rate",
+                    "cal_store_conversion_rate",
+                    "total_orders",
+                    "AOV",
+                    "total_quantity",
+                    "price_per_item",
+                    "total_revenue",
+                    "total_PC1",
+                    "margin",
+                    "RP_revenue_share",
+                    "promo_revenue_share",
+                ]
+            )
 
-        weekday_df = (
-            filtered_df.groupby("weekday", dropna=False)["store_absorption_rate"]
-            .mean()
-            .reset_index(name="avg_store_absorption_rate")
-        )
+        weekday_frames = []
+        for weekday, weekday_df in filtered_df.groupby("weekday", dropna=False):
+            total_orders = weekday_df["orders"].fillna(0).sum()
+            incoming_visitors = weekday_df["incoming_visitors"].fillna(0).sum()
+            total_revenue = weekday_df["total_revenue"].fillna(0).sum()
+            total_quantity = weekday_df["total_quantity"].fillna(0).sum()
+            total_pc1 = weekday_df["total_PC1"].fillna(0).sum()
+            total_rp_revenue = weekday_df["total_RP_revenue"].fillna(0).sum()
+            total_promo_revenue = weekday_df["total_promo_revenue"].fillna(0).sum()
+
+            weekday_frames.append(
+                {
+                    "weekday": weekday,
+                    "avg_store_absorption_rate": weekday_df["store_absorption_rate"].mean(),
+                    "cal_store_conversion_rate": _safe_div(total_orders, incoming_visitors),
+                    "total_orders": total_orders,
+                    "AOV": _safe_div(total_revenue, total_orders),
+                    "total_quantity": total_quantity,
+                    "price_per_item": _safe_div(total_revenue, total_quantity),
+                    "total_revenue": total_revenue,
+                    "total_PC1": total_pc1,
+                    "margin": _safe_div(total_pc1, total_revenue) * vat,
+                    "RP_revenue_share": _safe_div(total_rp_revenue, total_revenue),
+                    "promo_revenue_share": _safe_div(total_promo_revenue, total_revenue),
+                }
+            )
+
+        weekday_df = pd.DataFrame(weekday_frames)
         weekday_df["weekday"] = pd.Categorical(weekday_df["weekday"], categories=weekday_order, ordered=True)
         weekday_df = weekday_df.sort_values("weekday")
         weekday_df["group"] = group_name
-        return weekday_df[["weekday", "group", "avg_store_absorption_rate"]]
+        return weekday_df[
+            [
+                "weekday",
+                "group",
+                "avg_store_absorption_rate",
+                "cal_store_conversion_rate",
+                "total_orders",
+                "AOV",
+                "total_quantity",
+                "price_per_item",
+                "total_revenue",
+                "total_PC1",
+                "margin",
+                "RP_revenue_share",
+                "promo_revenue_share",
+            ]
+        ]
 
     subset_tables: dict[str, pd.DataFrame] = {}
     funnel_tables: dict[str, pd.DataFrame] = {}
     period_metrics: dict[str, dict[str, dict[str, float]]] = {}
-    weekday_absorption_frames: list[pd.DataFrame] = []
+    weekday_kpi_frames: list[pd.DataFrame] = []
 
     for group_name, stores in group_config.items():
         metrics_by_period: dict[str, dict[str, float]] = {}
@@ -386,13 +457,13 @@ def build_group_period_tables(
             baseline_metrics=metrics_by_period["Baseline Period"],
             promo_metrics=metrics_by_period["Promo Period"],
         )
-        weekday_absorption_frames.append(_weekday_absorption_table(group_name, promo_subset))
+        weekday_kpi_frames.append(_weekday_kpi_table(group_name, promo_subset))
 
-    weekday_absorption = pd.concat(weekday_absorption_frames, ignore_index=True)
+    weekday_kpis = pd.concat(weekday_kpi_frames, ignore_index=True)
 
     return {
         "subset_tables": subset_tables,
         "funnel_tables": funnel_tables,
         "period_metrics": period_metrics,
-        "weekday_absorption": weekday_absorption,
+        "weekday_kpis": weekday_kpis,
     }
