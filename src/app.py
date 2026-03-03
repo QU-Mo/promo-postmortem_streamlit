@@ -4,7 +4,12 @@ from google.cloud import bigquery
 import pandas as pd
 
 
-from raw_data import build_group_period_tables, build_raw_data_sql, fetch_raw_data
+from raw_data import (
+    build_group_period_tables,
+    build_raw_data_sql,
+    fetch_raw_data,
+    fetch_store_code_options,
+)
 
 
 st.set_page_config(page_title="Promo Post-Mortem", layout="wide")
@@ -35,20 +40,33 @@ def normalize_date_range(selected_range) -> list[date]:
     return [start + timedelta(days=offset) for offset in range((end - start).days + 1)]
 
 
-def build_store_options(country: str) -> dict[str, list[str]]:
-    if country == "AT":
+def build_store_options(store_codes: list[str]) -> dict[str, list[str]]:
+    if not store_codes:
+        fallback_codes = ["0049", "0053"]
         return {
-            "control_group_1": ["0422", "0413"],
-            "control_group_2": ["0422", "04137"],
-            "testing_group_1": ["0422", "04137"],
-            "testing_group_2": ["0422", "04137"],
+            "control_group_1": fallback_codes,
+            "control_group_2": fallback_codes,
+            "testing_group_1": fallback_codes,
+            "testing_group_2": fallback_codes,
         }
+
     return {
-        "control_group_1": ["0049", "0053"],
-        "control_group_2": ["0049", "0053"],
-        "testing_group_1": ["0049", "0053"],
-        "testing_group_2": ["0049", "0053"],
+        "control_group_1": store_codes,
+        "control_group_2": store_codes,
+        "testing_group_1": store_codes,
+        "testing_group_2": store_codes,
     }
+
+
+@st.cache_data(show_spinner=False)
+def get_store_codes(order_company_name_short: str, order_channel: str, order_country: str) -> list[str]:
+    bq_client = bigquery.Client()
+    return fetch_store_code_options(
+        order_company_name_short=order_company_name_short,
+        order_channel=order_channel,
+        order_country=order_country,
+        bq_client=bq_client,
+    )
 
 
 def build_promo_impact_table(
@@ -141,7 +159,13 @@ order_channel = st.sidebar.text_input("order_channel", value="STATIONARY")
 order_country = st.sidebar.selectbox("order_country", options=["DE", "AT"])
 vat = st.sidebar.number_input("VAT", min_value=0.0, value=1.0, step=0.01, format="%.2f")
 
-store_options = build_store_options(traffic_country)
+try:
+    store_codes = get_store_codes(order_company_name_short, order_channel, order_country)
+except Exception as error:
+    st.sidebar.warning(f"Could not load store codes from BigQuery: {error}")
+    store_codes = []
+
+store_options = build_store_options(store_codes)
 
 control_group_1_select_all = st.sidebar.checkbox("Select all stores - control group 1", value=True)
 if control_group_1_select_all:

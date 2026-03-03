@@ -124,6 +124,52 @@ def fetch_raw_data(
 FETCH_RAW_DATA_DEF = inspect.getsource(fetch_raw_data)
 
 
+def build_store_code_options_sql(
+    order_company_name_short: str,
+    order_channel: str,
+    order_country: str,
+    order_table: str = "puc-p-dataf-retmkt-pii.datamarts.multichannel_orders",
+) -> tuple[str, list]:
+    """Returns SQL query string and parameters for selectable store-code options."""
+    sql = f"""
+    SELECT
+      DISTINCT LPAD(CAST(tenant AS STRING), 4, '0') AS store_code
+    FROM `{order_table}` AS multichannel_orders
+    LEFT JOIN UNNEST(multichannel_orders.order_items) AS multichannel_orders__order_items
+    WHERE multichannel_orders.channel = @order_channel
+      AND multichannel_orders.company_name_short = @order_company_name_short
+      AND multichannel_orders.country = @order_country
+    ORDER BY store_code
+    """
+    params = [
+        bigquery.ScalarQueryParameter("order_company_name_short", "STRING", order_company_name_short),
+        bigquery.ScalarQueryParameter("order_channel", "STRING", order_channel),
+        bigquery.ScalarQueryParameter("order_country", "STRING", order_country),
+    ]
+    return sql, params
+
+
+def fetch_store_code_options(
+    order_company_name_short: str,
+    order_channel: str,
+    order_country: str,
+    bq_client: bigquery.Client,
+    order_table: str = "puc-p-dataf-retmkt-pii.datamarts.multichannel_orders",
+) -> list[str]:
+    sql, params = build_store_code_options_sql(
+        order_company_name_short=order_company_name_short,
+        order_channel=order_channel,
+        order_country=order_country,
+        order_table=order_table,
+    )
+    job_config = bigquery.QueryJobConfig(query_parameters=params)
+    query_job = bq_client.query(sql, job_config=job_config)
+    store_code_df = query_job.to_dataframe()
+    if store_code_df.empty:
+        return []
+    return store_code_df["store_code"].astype(str).str.zfill(4).tolist()
+
+
 def build_group_period_tables(
     raw_df: pd.DataFrame,
     control_group_1: list[str],
