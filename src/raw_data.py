@@ -20,7 +20,7 @@ def build_raw_data_sql(
         visited_on AS ordered_date,
         country,
         business_unit,
-        store_code,
+        LPAD(CAST(store_code AS STRING), 4, '0') AS store_code,
         store_name,
         COALESCE(SUM(pedestrian_footfall), 0) AS pedestrian_footfall,
         COALESCE(SUM(incoming_visitors), 0) / NULLIF(COALESCE(SUM(pedestrian_footfall), 0), 0) AS store_absorption_rate,
@@ -39,7 +39,7 @@ def build_raw_data_sql(
         country,
         company_name_short,
         channel,
-        tenant AS store_code,
+        LPAD(CAST(tenant AS STRING), 4, '0') AS store_code,
         store_name,
         ROUND(COALESCE(SUM(revenue_after_cancellations_and_returns_eur_incl_forecast), 0), 2) AS total_revenue,
         ROUND(COALESCE(SUM(CASE WHEN article_price_red_eur IS NOT NULL THEN revenue_after_cancellations_and_returns_eur_incl_forecast END), 0), 2) AS total_RP_revenue,
@@ -131,13 +131,14 @@ def build_group_period_tables(
 
     df = raw_df.copy()
     df["ordered_date"] = pd.to_datetime(df["ordered_date"]).dt.date
-    df["store_code"] = df["store_code"].astype(str)
+    df["store_code"] = df["store_code"].astype(str).str.zfill(4)
 
     def _subset(store_codes: list[str], period_dates: list[date]) -> pd.DataFrame:
         if not store_codes or not period_dates:
             return pd.DataFrame(columns=df.columns)
+        normalized_store_codes = [str(code).zfill(4) for code in store_codes]
         return df[
-            df["store_code"].isin(store_codes)
+            df["store_code"].isin(normalized_store_codes)
             & df["ordered_date"].isin(period_dates)
         ].sort_values(["ordered_date", "store_code"])
 
