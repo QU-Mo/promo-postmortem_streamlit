@@ -1,4 +1,5 @@
 from datetime import date
+import inspect
 import pandas as pd
 from google.cloud import bigquery
 
@@ -22,8 +23,8 @@ def build_raw_data_sql(
         business_unit,
         LPAD(CAST(store_code AS STRING), 4, '0') AS store_code,
         store_name,
-        COALESCE(SUM(pedestrian_footfall), 0) AS pedestrian_footfall,
-        COALESCE(SUM(incoming_visitors), 0) / NULLIF(COALESCE(SUM(pedestrian_footfall), 0), 0) AS store_absorption_rate,
+        SUM(pedestrian_footfall) AS pedestrian_footfall,
+        COALESCE(SUM(incoming_visitors), 0) / NULLIF(SUM(pedestrian_footfall), 0) AS store_absorption_rate,
         COALESCE(SUM(orders), 0) / NULLIF(COALESCE(SUM(incoming_visitors), 0), 0) AS store_conversion_rate,
         COALESCE(SUM(incoming_visitors), 0) AS incoming_visitors,
         COALESCE(SUM(orders), 0) AS orders
@@ -118,6 +119,9 @@ def fetch_raw_data(
     job_config = bigquery.QueryJobConfig(query_parameters=params)
     query_job = bq_client.query(sql, job_config=job_config)
     return query_job.to_dataframe()
+
+
+FETCH_RAW_DATA_DEF = inspect.getsource(fetch_raw_data)
 
 
 def build_group_period_tables(
