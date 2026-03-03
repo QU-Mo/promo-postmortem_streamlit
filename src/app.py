@@ -5,7 +5,7 @@ import pandas as pd
 import altair as alt
 
 
-from raw_data import (
+from store_level_raw_data import (
     build_group_period_tables,
     fetch_raw_data,
     fetch_store_code_options,
@@ -181,7 +181,7 @@ def build_weekday_chart(
     )
 
     lines = base.mark_line(point=True)
-    labels = base.mark_text(dy=-12, fontSize=11).encode(text=alt.Text(f"{kpi_col}:Q", format=format_pattern))
+    labels = base.mark_text(dx=-8, dy=-12, fontSize=9).encode(text=alt.Text(f"{kpi_col}:Q", format=format_pattern))
     return (lines + labels).properties(title=title, height=360)
 
 
@@ -198,7 +198,7 @@ traffic_country = st.sidebar.selectbox("traffic_country", options=["DE", "AT"])
 order_company_name_short = st.sidebar.text_input("order_company_name_short", value="PUC")
 order_channel = st.sidebar.text_input("order_channel", value="STATIONARY")
 order_country = st.sidebar.selectbox("order_country", options=["DE", "AT"])
-vat = st.sidebar.number_input("VAT", min_value=0.0, value=1.0, step=0.01, format="%.2f")
+vat = st.sidebar.number_input("VAT", min_value=0.0, value=1.19, step=0.01, format="%.2f")
 
 try:
     store_codes = get_store_codes(order_company_name_short, order_channel, order_country)
