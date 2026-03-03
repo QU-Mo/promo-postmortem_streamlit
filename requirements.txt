@@ -1,0 +1,6 @@
+pandas
+streamlit
+altair
+joblib
+google-cloud-bigquery
+db-dtypes
