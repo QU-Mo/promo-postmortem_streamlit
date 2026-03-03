@@ -1,9 +1,10 @@
 import streamlit as st
 from datetime import date, timedelta
 from google.cloud import bigquery
+import pandas as pd
 
 
-from raw_data import build_raw_data_sql, build_group_period_tables, fetch_raw_data
+from raw_data import FETCH_RAW_DATA_DEF, build_group_period_tables, fetch_raw_data
 
 
 
@@ -51,6 +52,42 @@ def build_store_options(country: str) -> dict[str, list[str]]:
 
 initialize_session_state()
 
+
+RATE_KPIS = {
+    "avg store absorption rate",
+    "cal store conversion rate",
+    "margin",
+    "RP revenue share",
+    "promo revenue share",
+}
+
+
+def _format_kpi_value(kpi: str, value: float, is_pct_diff: bool = False) -> str:
+    if pd.isna(value):
+        return "-"
+    if is_pct_diff or kpi in RATE_KPIS:
+        return f"{value:.2%}"
+    return f"{value:,.0f}"
+
+
+def format_funnel_table(table_df: pd.DataFrame) -> pd.DataFrame:
+    formatted_df = table_df.copy()
+    for col in ["Baseline Period", "Promo Period", "Abs Diff (Promo - Baseline)"]:
+        formatted_df[col] = formatted_df.apply(
+            lambda row: _format_kpi_value(row["KPI"], row[col]),
+            axis=1,
+        )
+
+    formatted_df["% Diff (Promo vs Baseline)"] = formatted_df.apply(
+        lambda row: _format_kpi_value(
+            row["KPI"],
+            row["% Diff (Promo vs Baseline)"],
+            is_pct_diff=True,
+        ),
+        axis=1,
+    )
+    return formatted_df
+
 st.title("Promo Post Mortem")
 
 st.sidebar.header("Configuration")
@@ -69,31 +106,43 @@ vat = st.sidebar.number_input("VAT", min_value=0.0, value=1.0, step=0.01, format
 store_options = build_store_options(traffic_country)
 
 control_group_1_select_all = st.sidebar.checkbox("Select all - control group 1", value=True)
-control_group_1 = st.sidebar.multiselect(
-    "control group1 (store code)",
-    options=store_options["control_group_1"],
-     default=store_options["control_group_1"] if control_group_1_select_all else [],
-)
+if control_group_1_select_all:
+    control_group_1 = store_options["control_group_1"]
+else:
+    control_group_1 = st.sidebar.multiselect(
+        "control group1 (store code)",
+        options=store_options["control_group_1"],
+        default=[],
+    )
 
 control_group_2_select_all = st.sidebar.checkbox("Select all - control group 2", value=True)
-control_group_2 = st.sidebar.multiselect(
-    "control group 2 (store code)",
-    options=store_options["control_group_2"],
-    default=store_options["control_group_2"] if control_group_2_select_all else [],
-)
+if control_group_2_select_all:
+    control_group_2 = store_options["control_group_2"]
+else:
+    control_group_2 = st.sidebar.multiselect(
+        "control group 2 (store code)",
+        options=store_options["control_group_2"],
+        default=[],
+    )
 
 testing_group_1_select_all = st.sidebar.checkbox("Select all - testing group 1", value=True)
-testing_group_1 = st.sidebar.multiselect(
-    "testing group 1 (store code)",
-    options=store_options["testing_group_1"],
-     default=store_options["testing_group_1"] if testing_group_1_select_all else [],
-)
+if testing_group_1_select_all:
+    testing_group_1 = store_options["testing_group_1"]
+else:
+    testing_group_1 = st.sidebar.multiselect(
+        "testing group 1 (store code)",
+        options=store_options["testing_group_1"],
+        default=[],
+    )
 testing_group_2_select_all = st.sidebar.checkbox("Select all - testing group 2", value=True)
-testing_group_2 = st.sidebar.multiselect(
-    "testing group 2(store code)",
-    options=store_options["testing_group_2"],
-    default=store_options["testing_group_2"] if testing_group_2_select_all else [],
-)
+if testing_group_2_select_all:
+    testing_group_2 = store_options["testing_group_2"]
+else:
+    testing_group_2 = st.sidebar.multiselect(
+        "testing group 2(store code)",
+        options=store_options["testing_group_2"],
+        default=[],
+    )
 
 baseline_range = st.sidebar.date_input(
     "baseline period",
@@ -132,17 +181,8 @@ if st.sidebar.button("Run"):
             selected_dates=selected_dates,
             bq_client=bq_client,
         )
-        sql, _ = build_raw_data_sql(
-            traffic_business_unit=traffic_business_unit,
-            traffic_country=traffic_country,
-            order_company_name_short=order_company_name_short,
-            order_channel=order_channel,
-            order_country=order_country,
-            selected_dates=selected_dates,
-        )
-
         st.session_state["data"] = df
-        st.session_state["sql"] = sql
+        st.session_state["sql"] = None
         st.session_state["group_tables"] = build_group_period_tables(
             raw_df=df,
             control_group_1=control_group_1,
@@ -177,21 +217,7 @@ if st.session_state.get("group_tables"):
         selected_codes = group_store_map.get(matching_group, [])
         st.markdown(f"**{table_name}**  ")
         st.caption(f"Selected store code(s): {', '.join(selected_codes) if selected_codes else 'None'}")
-        st.dataframe(table_df, use_container_width=True)
+        st.dataframe(format_funnel_table(table_df), use_container_width=True)
 
-
-        subset_tables = st.session_state["group_tables"].get("subset_tables", {})
-    if subset_tables:
-        st.subheader("Download _subset Tables")
-        for table_name, table_df in subset_tables.items():
-            st.download_button(
-                label=f"Download {table_name}",
-                data=table_df.to_csv(index=False).encode("utf-8"),
-                file_name=f"{table_name.lower().replace(' ', '_')}.csv",
-                mime="text/csv",
-            )
-
-
-if st.session_state.get("sql"):
-    with st.expander("Generated SQL"):
-        st.code(st.session_state["sql"], language="sql")
+with st.expander("def fetch_raw_data"):
+    st.code(FETCH_RAW_DATA_DEF, language="python")
