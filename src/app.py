@@ -64,29 +64,35 @@ traffic_country = st.sidebar.selectbox("traffic_country", options=["DE", "AT"])
 order_company_name_short = st.sidebar.text_input("order_company_name_short", value="PUC")
 order_channel = st.sidebar.text_input("order_channel", value="STATIONARY")
 order_country = st.sidebar.selectbox("order_country", options=["DE", "AT"])
+vat = st.sidebar.number_input("VAT", min_value=0.0, value=1.0, step=0.01, format="%.2f")
 
 store_options = build_store_options(traffic_country)
 
+control_group_1_select_all = st.sidebar.checkbox("Select all - control group 1", value=True)
 control_group_1 = st.sidebar.multiselect(
     "control group1 (store code)",
     options=store_options["control_group_1"],
-    default=store_options["control_group_1"],
+     default=store_options["control_group_1"] if control_group_1_select_all else [],
 )
 
+control_group_2_select_all = st.sidebar.checkbox("Select all - control group 2", value=True)
 control_group_2 = st.sidebar.multiselect(
     "control group 2 (store code)",
     options=store_options["control_group_2"],
-    default=store_options["control_group_2"],
+    default=store_options["control_group_2"] if control_group_2_select_all else [],
 )
+
+testing_group_1_select_all = st.sidebar.checkbox("Select all - testing group 1", value=True)
 testing_group_1 = st.sidebar.multiselect(
     "testing group 1 (store code)",
     options=store_options["testing_group_1"],
-    default=store_options["testing_group_1"],
+     default=store_options["testing_group_1"] if testing_group_1_select_all else [],
 )
+testing_group_2_select_all = st.sidebar.checkbox("Select all - testing group 2", value=True)
 testing_group_2 = st.sidebar.multiselect(
     "testing group 2(store code)",
     options=store_options["testing_group_2"],
-    default=store_options["testing_group_2"],
+    default=store_options["testing_group_2"] if testing_group_2_select_all else [],
 )
 
 baseline_range = st.sidebar.date_input(
@@ -116,10 +122,7 @@ if st.sidebar.button("Run"):
    
     bq_client = bigquery.Client()
     try:
-        st.write(
-             f"Running Promo Post Mortem BigQuery for {traffic_country}/{order_country} on {len(selected_dates)} selected day(s)..."
         
-        )
         df = fetch_raw_data(
             traffic_business_unit=traffic_business_unit,
             traffic_country=traffic_country,
@@ -148,6 +151,7 @@ if st.sidebar.button("Run"):
             testing_group_2=testing_group_2,
             baseline_dates=baseline_dates,
             promo_dates=promo_dates,
+            vat=vat,
         )
     except Exception as e:
         st.session_state["data"] = None
@@ -158,7 +162,8 @@ if st.sidebar.button("Run"):
 
 
 if st.session_state.get("group_tables"):
-    st.subheader("Grouped Results")
+    st.subheader("Funnel Analysis")
+    st.caption("excelude Sunday")
     group_store_map = {
         "Control Group 1": control_group_1,
         "Control Group 2": control_group_2,
@@ -166,15 +171,26 @@ if st.session_state.get("group_tables"):
         "Testing Group 2": testing_group_2,
     }
 
-    for table_name, table_df in st.session_state["group_tables"].items():
-        matching_group = next(
-            (group_name for group_name in group_store_map if table_name.startswith(group_name)),
-            None,
-        )
+    funnel_tables = st.session_state["group_tables"].get("funnel_tables", {})
+    for table_name, table_df in funnel_tables.items():
+        matching_group = table_name if table_name in group_store_map else None
         selected_codes = group_store_map.get(matching_group, [])
         st.markdown(f"**{table_name}**  ")
         st.caption(f"Selected store code(s): {', '.join(selected_codes) if selected_codes else 'None'}")
         st.dataframe(table_df, use_container_width=True)
+
+
+        subset_tables = st.session_state["group_tables"].get("subset_tables", {})
+    if subset_tables:
+        st.subheader("Download _subset Tables")
+        for table_name, table_df in subset_tables.items():
+            st.download_button(
+                label=f"Download {table_name}",
+                data=table_df.to_csv(index=False).encode("utf-8"),
+                file_name=f"{table_name.lower().replace(' ', '_')}.csv",
+                mime="text/csv",
+            )
+
 
 if st.session_state.get("sql"):
     with st.expander("Generated SQL"):
