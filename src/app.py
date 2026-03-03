@@ -2,6 +2,7 @@ import streamlit as st
 from datetime import date, timedelta
 from google.cloud import bigquery
 import pandas as pd
+import altair as alt
 
 
 from raw_data import (
@@ -78,16 +79,27 @@ def build_promo_impact_table(
     if control_df is None or testing_df is None:
         return pd.DataFrame()
 
-    control_pct = control_df[["KPI", "% Diff (Promo vs Baseline)"]].rename(
-        columns={"% Diff (Promo vs Baseline)": f"{selected_control_group} %Diff"}
+    control_metrics = control_df[["KPI", "% Diff (Promo vs Baseline)", "Abs Diff (Promo - Baseline)"]].rename(
+        columns={
+            "% Diff (Promo vs Baseline)": f"{selected_control_group} % Diff (Promo vs Baseline)",
+            "Abs Diff (Promo - Baseline)": f"{selected_control_group} Abs Diff (Promo vs Baseline)",
+        }
     )
-    testing_pct = testing_df[["KPI", "% Diff (Promo vs Baseline)"]].rename(
-        columns={"% Diff (Promo vs Baseline)": f"{selected_testing_group} %Diff"}
+    testing_metrics = testing_df[["KPI", "% Diff (Promo vs Baseline)", "Abs Diff (Promo - Baseline)"]].rename(
+        columns={
+            "% Diff (Promo vs Baseline)": f"{selected_testing_group} % Diff (Promo vs Baseline)",
+            "Abs Diff (Promo - Baseline)": f"{selected_testing_group} Abs Diff (Promo vs Baseline)",
+        }
     )
 
-    merged = testing_pct.merge(control_pct, on="KPI", how="inner")
-    merged["Promo Impact"] = (
-        merged[f"{selected_testing_group} %Diff"] - merged[f"{selected_control_group} %Diff"]
+    merged = testing_metrics.merge(control_metrics, on="KPI", how="inner")
+    merged["Promo Impact (Testing Group 1 %Diff - Control Group 1 %Diff )"] = (
+        merged[f"{selected_testing_group} % Diff (Promo vs Baseline)"]
+        - merged[f"{selected_control_group} % Diff (Promo vs Baseline)"]
+    )
+    merged["Promo Impact (Testing Group 1 Abs Diff - Control Group 1 Abs Diff )"] = (
+        merged[f"{selected_testing_group} Abs Diff (Promo vs Baseline)"]
+        - merged[f"{selected_control_group} Abs Diff (Promo vs Baseline)"]
     )
     return merged
 
@@ -134,13 +146,40 @@ def format_funnel_table(table_df: pd.DataFrame) -> pd.DataFrame:
 
 def format_promo_impact_table(table_df: pd.DataFrame) -> pd.DataFrame:
     formatted_df = table_df.copy()
-    percent_cols = [col for col in formatted_df.columns if col.endswith("%Diff") or col == "Promo Impact"]
+    percent_cols = [col for col in formatted_df.columns if "% Diff (Promo vs Baseline)" in col or "%Diff" in col]
+    abs_cols = [col for col in formatted_df.columns if "Abs Diff" in col]
+
     for col in percent_cols:
         formatted_df[col] = formatted_df.apply(
             lambda row: _format_kpi_value("Promo Impact", row[col], is_pct_diff=True),
             axis=1,
         )
+    for col in abs_cols:
+        formatted_df[col] = formatted_df.apply(
+            lambda row: _format_kpi_value(row["KPI"], row[col]),
+            axis=1,
+        )
     return formatted_df
+
+
+def build_weekday_chart(
+    chart_df: pd.DataFrame,
+    kpi_col: str,
+    title: str,
+    is_rate: bool,
+) -> alt.Chart:
+    format_pattern = ".2%" if is_rate else ",.0f"
+    y_axis_format = ".0%" if is_rate else ",.0f"
+
+    base = alt.Chart(chart_df).encode(
+        x=alt.X("weekday:N", sort=["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"], axis=alt.Axis(labelAngle=0, title=None)),
+        y=alt.Y(f"{kpi_col}:Q", axis=alt.Axis(format=y_axis_format, title=None)),
+        color=alt.Color("group:N", legend=alt.Legend(orient="right", direction="vertical", title=None)),
+    )
+
+    lines = base.mark_line(point=True)
+    labels = base.mark_text(dy=-12, fontSize=11).encode(text=alt.Text(f"{kpi_col}:Q", format=format_pattern))
+    return (lines + labels).properties(title=title, height=360)
 
 
 st.title("Promo Post Mortem")
@@ -264,8 +303,7 @@ if st.sidebar.button("Run"):
         st.error(f"Error running query: {e}")
 
 if st.session_state.get("group_tables"):
-    st.subheader("Funnel Analysis")
-    st.caption("excelude Sunday")
+    st.subheader("Store Level - Funnel Analysis (Exclude Sunday)")
     group_store_map = {
         "Control Group 1": control_group_1,
         "Control Group 2": control_group_2,
@@ -322,7 +360,7 @@ if st.session_state.get("group_tables"):
     )
     st.markdown("**Promo Impact**")
     st.caption(
-        f"Promo Impact = {_group_label(selected_testing_group)} %Diff (Promo vs Baseline) - {_group_label(selected_control_group)} %Diff (Promo vs Baseline)"
+        "Promo Impact includes % Diff and Abs Diff comparisons between testing and control groups."
     )
     st.dataframe(format_promo_impact_table(promo_impact_df), use_container_width=True)
 
@@ -330,37 +368,29 @@ if st.session_state.get("group_tables"):
     chart_df = weekday_kpis[weekday_kpis["group"].isin(selected_groups)].copy()
     if not chart_df.empty:
         chart_df["group"] = chart_df["group"].map(_group_label)
-        st.markdown("**Avg Store Absorption Rate by Weekday (Promo Period)**")
-        st.line_chart(
-            chart_df,
-            x="weekday",
-            y="avg_store_absorption_rate",
-            color="group",
-            use_container_width=True,
-        )
-
-        extra_weekday_kpis = [
-            ("Cal Store Conversion Rate by Weekday (Promo Period)", "cal_store_conversion_rate"),
-            ("Total Orders by Weekday (Promo Period)", "total_orders"),
-            ("AOV by Weekday (Promo Period)", "AOV"),
-            ("Total Quantity by Weekday (Promo Period)", "total_quantity"),
-            ("Price per Item by Weekday (Promo Period)", "price_per_item"),
-            ("Total Revenue by Weekday (Promo Period)", "total_revenue"),
-            ("Total PC1 by Weekday (Promo Period)", "total_PC1"),
-            ("Margin by Weekday (Promo Period)", "margin"),
-            ("RP Revenue Share by Weekday (Promo Period)", "RP_revenue_share"),
-            ("Promo Revenue Share by Weekday (Promo Period)", "promo_revenue_share"),
+        weekday_charts = [
+            ("Avg Store Absorption Rate by Weekday", "avg_store_absorption_rate", True),
+            ("Cal Store Conversion Rate by Weekday", "cal_store_conversion_rate", True),
+            ("Total Orders by Weekday", "total_orders", False),
+            ("AOV by Weekday", "AOV", False),
+            ("Total Quantity by Weekday", "total_quantity", False),
+            ("Price per Item by Weekday", "price_per_item", False),
+            ("Total Revenue by Weekday", "total_revenue", False),
+            ("Total PC1 by Weekday", "total_PC1", False),
+            ("Margin by Weekday", "margin", True),
+            ("RP Revenue Share by Weekday", "RP_revenue_share", True),
+            ("Promo Revenue Share by Weekday", "promo_revenue_share", True),
         ]
 
-        for title, kpi_col in extra_weekday_kpis:
-            st.markdown(f"**{title}**")
-            st.line_chart(
-                chart_df,
-                x="weekday",
-                y=kpi_col,
-                color="group",
-                use_container_width=True,
-            )
+        for i in range(0, len(weekday_charts), 2):
+            row_cols = st.columns(2)
+            for col_idx, chart_config in enumerate(weekday_charts[i : i + 2]):
+                title, kpi_col, is_rate = chart_config
+                with row_cols[col_idx]:
+                    st.altair_chart(
+                        build_weekday_chart(chart_df=chart_df, kpi_col=kpi_col, title=title, is_rate=is_rate),
+                        use_container_width=True,
+                    )
 
 if st.session_state.get("data") is not None:
     st.download_button(
