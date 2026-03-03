@@ -168,6 +168,9 @@ def build_weekday_chart(
     title: str,
     is_rate: bool,
 ) -> alt.Chart:
+    chart_df = chart_df.copy()
+    chart_df[kpi_col] = pd.to_numeric(chart_df[kpi_col], errors="coerce")
+
     format_pattern = ".2%" if is_rate else ",.0f"
     y_axis_format = ".0%" if is_rate else ",.0f"
 
