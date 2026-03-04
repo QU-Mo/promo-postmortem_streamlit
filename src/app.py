@@ -166,13 +166,12 @@ def build_weekday_chart(
     chart_df: pd.DataFrame,
     kpi_col: str,
     title: str,
-    is_rate: bool,
 ) -> alt.Chart:
     chart_df = chart_df.copy()
     chart_df[kpi_col] = pd.to_numeric(chart_df[kpi_col], errors="coerce")
 
-    format_pattern = ".2%" if is_rate else ",.0f"
-    y_axis_format = ".0%" if is_rate else ",.0f"
+    format_pattern = ".2%"
+    y_axis_format = ".0%"
 
     base = alt.Chart(chart_df).encode(
         x=alt.X("weekday:N", sort=["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"], axis=alt.Axis(labelAngle=0, title=None)),
@@ -180,9 +179,11 @@ def build_weekday_chart(
         color=alt.Color("group:N", legend=alt.Legend(orient="right", direction="vertical", title=None)),
     )
 
-    lines = base.mark_line(point=True)
-    labels = base.mark_text(dx=-8, dy=-12, fontSize=9).encode(text=alt.Text(f"{kpi_col}:Q", format=format_pattern))
-    return (lines + labels).properties(title=title, height=360)
+    bars = base.mark_bar().encode(
+        xOffset="group:N",
+    )
+    labels = base.mark_text(dy=-8, fontSize=9).encode(text=alt.Text(f"{kpi_col}:Q", format=format_pattern), xOffset="group:N")
+    return (bars + labels).properties(title=title, height=360)
 
 
 st.title("Promo Post Mortem")
@@ -367,31 +368,31 @@ if st.session_state.get("group_tables"):
     )
     st.dataframe(format_promo_impact_table(promo_impact_df), use_container_width=True)
 
-    weekday_kpis = st.session_state["group_tables"].get("weekday_kpis", pd.DataFrame())
+    weekday_kpis = st.session_state["group_tables"].get("weekday_pct_diff_kpis", pd.DataFrame())
     chart_df = weekday_kpis[weekday_kpis["group"].isin(selected_groups)].copy()
     if not chart_df.empty:
         chart_df["group"] = chart_df["group"].map(_group_label)
         weekday_charts = [
-            ("Avg Store Absorption Rate by Weekday", "avg_store_absorption_rate", True),
-            ("Cal Store Conversion Rate by Weekday", "cal_store_conversion_rate", True),
-            ("Total Orders by Weekday", "total_orders", False),
-            ("AOV by Weekday", "AOV", False),
-            ("Total Quantity by Weekday", "total_quantity", False),
-            ("Price per Item by Weekday", "price_per_item", False),
-            ("Total Revenue by Weekday", "total_revenue", False),
-            ("Total PC1 by Weekday", "total_PC1", False),
-            ("Margin by Weekday", "margin", True),
-            ("RP Revenue Share by Weekday", "RP_revenue_share", True),
-            ("Promo Revenue Share by Weekday", "promo_revenue_share", True),
+            ("Avg Store Absorption Rate % Diff by Weekday", "avg_store_absorption_rate_pct_diff"),
+            ("Cal Store Conversion Rate % Diff by Weekday", "cal_store_conversion_rate_pct_diff"),
+            ("Total Orders % Diff by Weekday", "total_orders_pct_diff"),
+            ("AOV % Diff by Weekday", "AOV_pct_diff"),
+            ("Total Quantity % Diff by Weekday", "total_quantity_pct_diff"),
+            ("Price per Item % Diff by Weekday", "price_per_item_pct_diff"),
+            ("Total Revenue % Diff by Weekday", "total_revenue_pct_diff"),
+            ("Total PC1 % Diff by Weekday", "total_PC1_pct_diff"),
+            ("Margin % Diff by Weekday", "margin_pct_diff"),
+            ("RP Revenue Share % Diff by Weekday", "RP_revenue_share_pct_diff"),
+            ("Promo Revenue Share % Diff by Weekday", "promo_revenue_share_pct_diff"),
         ]
 
         for i in range(0, len(weekday_charts), 2):
             row_cols = st.columns(2)
             for col_idx, chart_config in enumerate(weekday_charts[i : i + 2]):
-                title, kpi_col, is_rate = chart_config
+                title, kpi_col = chart_config
                 with row_cols[col_idx]:
                     st.altair_chart(
-                        build_weekday_chart(chart_df=chart_df, kpi_col=kpi_col, title=title, is_rate=is_rate),
+                        build_weekday_chart(chart_df=chart_df, kpi_col=kpi_col, title=title),
                         use_container_width=True,
                     )
 
