@@ -346,12 +346,11 @@ def build_group_period_tables(
             )
         return pd.DataFrame(rows)
 
-    def _weekday_kpi_table(group_name: str, subset_df: pd.DataFrame) -> pd.DataFrame:
+    def _weekday_kpi_table(subset_df: pd.DataFrame) -> pd.DataFrame:
         if subset_df.empty:
             return pd.DataFrame(
                 columns=[
                     "weekday",
-                    "group",
                     "avg_store_absorption_rate",
                     "cal_store_conversion_rate",
                     "total_orders",
@@ -372,7 +371,6 @@ def build_group_period_tables(
             return pd.DataFrame(
                 columns=[
                     "weekday",
-                    "group",
                     "avg_store_absorption_rate",
                     "cal_store_conversion_rate",
                     "total_orders",
@@ -417,11 +415,9 @@ def build_group_period_tables(
         weekday_df = pd.DataFrame(weekday_frames)
         weekday_df["weekday"] = pd.Categorical(weekday_df["weekday"], categories=weekday_order, ordered=True)
         weekday_df = weekday_df.sort_values("weekday")
-        weekday_df["group"] = group_name
         return weekday_df[
             [
                 "weekday",
-                "group",
                 "avg_store_absorption_rate",
                 "cal_store_conversion_rate",
                 "total_orders",
@@ -440,6 +436,7 @@ def build_group_period_tables(
     funnel_tables: dict[str, pd.DataFrame] = {}
     period_metrics: dict[str, dict[str, dict[str, float]]] = {}
     weekday_kpi_frames: list[pd.DataFrame] = []
+    weekday_pct_diff_frames: list[pd.DataFrame] = []
 
     for group_name, stores in group_config.items():
         metrics_by_period: dict[str, dict[str, float]] = {}
@@ -457,13 +454,73 @@ def build_group_period_tables(
             baseline_metrics=metrics_by_period["Baseline Period"],
             promo_metrics=metrics_by_period["Promo Period"],
         )
-        weekday_kpi_frames.append(_weekday_kpi_table(group_name, promo_subset))
+        promo_weekday_kpis = _weekday_kpi_table(promo_subset)
+        promo_weekday_kpis["group"] = group_name
+        weekday_kpi_frames.append(promo_weekday_kpis)
+
+        baseline_subset = subset_tables.get(f"{group_name} - Baseline Period", pd.DataFrame(columns=df.columns))
+        baseline_weekday_kpis = _weekday_kpi_table(baseline_subset)
+
+        weekday_comparison_df = promo_weekday_kpis.merge(
+            baseline_weekday_kpis,
+            on="weekday",
+            how="left",
+            suffixes=("_promo", "_baseline"),
+        )
+
+        metric_cols = [
+            "avg_store_absorption_rate",
+            "cal_store_conversion_rate",
+            "total_orders",
+            "AOV",
+            "total_quantity",
+            "price_per_item",
+            "total_revenue",
+            "total_PC1",
+            "margin",
+            "RP_revenue_share",
+            "promo_revenue_share",
+        ]
+
+        for metric_col in metric_cols:
+            promo_col = f"{metric_col}_promo"
+            baseline_col = f"{metric_col}_baseline"
+            diff_col = f"{metric_col}_pct_diff"
+            weekday_comparison_df[diff_col] = weekday_comparison_df.apply(
+                lambda row: _safe_div(
+                    (float(row.get(promo_col, 0.0) or 0.0) - float(row.get(baseline_col, 0.0) or 0.0)),
+                    float(row.get(baseline_col, 0.0) or 0.0),
+                ),
+                axis=1,
+            )
+
+        weekday_pct_diff_frames.append(
+            weekday_comparison_df[
+                [
+                    "weekday",
+                    "group",
+                    "avg_store_absorption_rate_pct_diff",
+                    "cal_store_conversion_rate_pct_diff",
+                    "total_orders_pct_diff",
+                    "AOV_pct_diff",
+                    "total_quantity_pct_diff",
+                    "price_per_item_pct_diff",
+                    "total_revenue_pct_diff",
+                    "total_PC1_pct_diff",
+                    "margin_pct_diff",
+                    "RP_revenue_share_pct_diff",
+                    "promo_revenue_share_pct_diff",
+                ]
+            ]
+        )
 
     weekday_kpis = pd.concat(weekday_kpi_frames, ignore_index=True)
+    weekday_pct_diff_kpis = pd.concat(weekday_pct_diff_frames, ignore_index=True)
 
     return {
         "subset_tables": subset_tables,
         "funnel_tables": funnel_tables,
         "period_metrics": period_metrics,
         "weekday_kpis": weekday_kpis,
+        "weekday_pct_diff_kpis": weekday_pct_diff_kpis,
     }
