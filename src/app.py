@@ -10,10 +10,44 @@ from store_level_raw_data import (
     fetch_raw_data,
     fetch_store_code_options,
 )
+from promo_article_section_level_raw_data import fetch_promo_article_section_level_raw_data
 
 
 st.set_page_config(page_title="Promo Post-Mortem", layout="wide")
 
+
+
+ALL_ARTICLE_SEASONS = ["GANZJAHR", "SOMMER", "WINTER", "UNKNOWN"]
+ALL_ARTICLE_SECTION_GROUP = [
+    "D-ACCESSOIRES", "D-BAUKASTEN", "D-BLAZER", "D-BLUSE", "D-HOSE", "D-INDOOR-WESTE",
+    "D-JACKE", "D-JUMPSUIT", "D-KLEID", "D-LEDER", "D-MANTEL", "D-MODESCHMUCK", "D-OUTDOOR-WESTE", "D-ROECKE",
+    "D-STRICK", "D-SWEAT", "D-T-SHIRT", "D-TWINSET", "H-ACCESSOIRES", "H-ANZUG", "H-CITYHEMD", "H-FREIZEITHEMD",
+    "H-HOSE", "H-INDOOR-WESTE", "H-JACKE", "H-KRAWATTE", "H-LEDER", "H-MANTEL", "H-OUTDOOR-WESTE", "H-POLO",
+    "H-PSEUDO", "H-SAKKO", "H-STRICK", "H-SWEAT", "H-T-SHIRT", "K-ACCESSOIRES", "K-ANZUG", "K-BLUSE", "K-HEMD",
+    "K-HOSE", "K-JACKE", "K-KLEID", "K-MANTEL", "K-ROCK", "K-SAKKO", "K-STRICK", "K-SWEAT", "K-T-SHIR", "K-WESTE",
+    "SONSTIGES", "UNKNOWN",
+]
+ALL_ARTICLE_SECTIONS = [
+    "ABENDKLEID", "ACCESSOIRE", "ANZUG", "ARMSCHMUCK", "BADEANZUG", "BADEMANTEL", "BADEWAESCHE", "BAUK-BLAZER",
+    "BAUK-HOSE", "BAUK-KLEID", "BAUK-ROCK", "BAUK-SAKKO", "BAUK-WESTE", "BERMUDA", "BH", "BIKINI", "BK-SMOKING-HOSE",
+    "BK-SMOKING-SAKKO", "BLAZER", "BLUSE", "BLUSE-1/1", "BLUSE-1/2", "BLUSE-3/4", "BLUSE-OHNE ARM", "BODY", "BOOTS",
+    "BUERO", "CASUAL-HOSE", "CASUAL-SAKKO", "CITYH-1/1", "CITYH-1/1 EXTRAKURZ", "CITYH-1/1 EXTRALANG", "CITYH-1/2",
+    "COCKT-STRICK", "COCKTAIL-ACCES", "COCKTAIL-BLUSE", "COCKTAIL-HOSE", "COCKTAIL-JACKE", "COCKTAIL-JUMPSUIT",
+    "COCKTAIL-ROCK", "COCKTAIL-SHIRT", "COCKTAIL-TASCH", "COCKTAILKLEID", "COMMUNITY MASKE", "CORSAGE", "COSMETICS",
+    "DECKE", "EINSTECKTUCH", "FINGERSCHMUCK", "FIVE POCKET", "FIVE-POCKET", "FREIZEITH-1/1", "FREIZEITH-1/2",
+    "FUN", "GESELLSCHAFT", "GUERTEL", "HAARSCHMUCK", "HALSSCHMUCK", "HANDSCHUHE", "HANDTUCH", "HANDYHUELLE", "HEMD",
+    "HOSE", "HOSE VERKUERZT", "HOSENTRAEGER", "HUT", "INDOOR-WESTE", "JACKE", "JACQUARDS", "JEANS", "JEANS-VERKUERZT",
+    "JEGGINGS", "JERSEY UNTERTE", "JUMPSUIT", "KAPPE", "KISSEN", "KLEID", "KLEIDERKOMBI", "KLEINLEDER", "KLEINLEDERWAREN",
+    "KOFFER", "KOPFBEDECKUNG", "KOPFHOERER", "KRAWATTE", "KRAWATTENKLAMMER", "KRAWATTENNADEL", "KUECHE", "KUMMERBUND",
+    "LEDER", "LEDER-VEGAN", "LEGGINGS", "LIVING", "MANSCHETTENKNO", "MANTEL", "MANTEL-TW", "MODESCHMUCK", "MUETZE",
+    "NACHTHEMD", "NSTIGES", "OFFENE SCHUHE", "OHRENWAERMER", "OHRSCHMUCK", "OUTDOOR-WESTE", "OVERSHIRT", "PANT",
+    "PASCHMINA", "PFLEGEMITTEL", "POLO-1/1", "POLO-1/2", "POLO-3/4", "POLO-OHNE ARM", "PONCHO", "PSEUDO", "PYJAMA",
+    "REGENSCHIRM", "ROCK", "SAKKO", "SCHAL", "SCHLEIFE", "SCHMUCK", "SCHUH", "SCHUHE", "SETS", "SHORTS", "SLIDES",
+    "SLIP", "SNEAKER", "SONNENBRILLE", "SONST-ACC", "STIEFEL", "STRICK", "STRICKJACKE", "STRICKPULLOVER", "STRING",
+    "STRUMPF", "STRUMPFHOSE", "SWEAT", "SWEATANZUG", "SWEATHOSE", "SWEATJACKE", "SWEATSHIRT", "Strick-1/2", "T-SH-O.ARM",
+    "T-SH-O.ARM-HS", "T-SHIRT 1/1", "T-SHIRT 1/2", "T-SHIRT-1/1", "T-SHIRT-1/2", "T-SHIRT-3/4", "T-SHIRT-O ARM",
+    "T-SHIRT-O. ARM", "TASCHE", "TECHNIK", "TRAVEL", "TUECHER", "TWINSET", "UHR", "WAESCHE", "WESTE", "UNKNOWN",
+]
 
 def initialize_session_state() -> None:
     if "data" not in st.session_state:
@@ -22,6 +56,8 @@ def initialize_session_state() -> None:
         st.session_state["sql"] = None
     if "group_tables" not in st.session_state:
         st.session_state["group_tables"] = {}
+    if "category_group_tables" not in st.session_state:
+        st.session_state["category_group_tables"] = {}
 
 
 def normalize_date_range(selected_range) -> list[date]:
@@ -67,6 +103,9 @@ def get_store_codes(order_company_name_short: str, order_channel: str, order_cou
         order_country=order_country,
         bq_client=bq_client,
     )
+
+
+
 
 
 def build_promo_impact_table(
@@ -268,6 +307,36 @@ baseline_dates = normalize_date_range(baseline_range)
 promo_dates = normalize_date_range(promo_range)
 selected_dates = sorted(set(baseline_dates + promo_dates))
 
+article_section_group_select_all = st.sidebar.checkbox("Select all - article_section_group", value=True)
+if article_section_group_select_all:
+    article_section_groups = ALL_ARTICLE_SECTION_GROUP
+else:
+    article_section_groups = st.sidebar.multiselect(
+        "article_section_group",
+        options=ALL_ARTICLE_SECTION_GROUP,
+        default=[],
+    )
+
+article_section_select_all = st.sidebar.checkbox("Select all - article_section", value=True)
+if article_section_select_all:
+    article_sections = ALL_ARTICLE_SECTIONS
+else:
+    article_sections = st.sidebar.multiselect(
+        "article_section",
+        options=ALL_ARTICLE_SECTIONS,
+        default=[],
+    )
+
+article_season_select_all = st.sidebar.checkbox("Select all - article_season", value=False)
+if article_season_select_all:
+    article_seasons = ALL_ARTICLE_SEASONS
+else:
+    article_seasons = st.sidebar.multiselect(
+        "article_season",
+        options=ALL_ARTICLE_SEASONS,
+        default=["GANZJAHR"],
+    )
+
 if st.sidebar.button("Run"):
     if not selected_dates:
         st.warning("Please select at least one date in baseline or promo period.")
@@ -300,10 +369,29 @@ if st.sidebar.button("Run"):
             promo_dates=promo_dates,
             vat=vat,
         )
+
+        category_df = fetch_promo_article_section_level_raw_data(
+            order_company_name_short=order_company_name_short,
+            order_channel=order_channel,
+            order_country=order_country,
+            selected_dates=selected_dates,
+            article_section_groups=article_section_groups,
+            article_sections=article_sections,
+            article_seasons=article_seasons,
+            bq_client=bq_client,
+        )
+        category_df["store_code"] = category_df["store_code"].astype(str).str.zfill(4)
+        st.session_state["category_group_tables"] = {
+            "Control Group 1": category_df[category_df["store_code"].isin([str(c).zfill(4) for c in control_group_1])],
+            "Control Group 2": category_df[category_df["store_code"].isin([str(c).zfill(4) for c in control_group_2])],
+            "Testing Group 1": category_df[category_df["store_code"].isin([str(c).zfill(4) for c in testing_group_1])],
+            "Testing Group 2": category_df[category_df["store_code"].isin([str(c).zfill(4) for c in testing_group_2])],
+        }
     except Exception as e:
         st.session_state["data"] = None
         st.session_state["sql"] = None
         st.session_state["group_tables"] = {}
+        st.session_state["category_group_tables"] = {}
         st.error(f"Error running query: {e}")
 
 if st.session_state.get("group_tables"):
@@ -395,6 +483,13 @@ if st.session_state.get("group_tables"):
                         build_weekday_chart(chart_df=chart_df, kpi_col=kpi_col, title=title),
                         use_container_width=True,
                     )
+
+if st.session_state.get("category_group_tables"):
+    st.subheader("Store Level -Selected Categories Analysis")
+    for group_name in ["Control Group 1", "Control Group 2", "Testing Group 1", "Testing Group 2"]:
+        group_df = st.session_state["category_group_tables"].get(group_name, pd.DataFrame())
+        st.markdown(f"**{group_name}**")
+        st.dataframe(group_df, use_container_width=True)
 
 if st.session_state.get("data") is not None:
     st.download_button(
