@@ -12,6 +12,7 @@ from store_level_raw_data import (
 )
 from promo_article_section_level_raw_data import (
     build_selected_categories_funnel_table,
+    build_selected_categories_waterfall_table,
     fetch_promo_article_section_level_raw_data,
 )
 
@@ -242,6 +243,57 @@ def build_weekday_chart(
         direction="horizontal",
         title=None,
     )
+
+
+def build_selected_categories_waterfall_chart(waterfall_df: pd.DataFrame, title: str) -> alt.Chart:
+    if waterfall_df.empty:
+        return alt.Chart(pd.DataFrame({"Step": [], "Value": []})).mark_bar()
+
+    chart_df = waterfall_df.copy().reset_index(drop=True)
+    chart_df["Value"] = pd.to_numeric(chart_df["Value"], errors="coerce").fillna(0.0)
+
+    running_total = []
+    starts = []
+    current = 0.0
+    for idx, row in chart_df.iterrows():
+        if row["Type"] == "total":
+            start = 0.0
+            end = row["Value"]
+            current = end
+        else:
+            start = current
+            end = current + row["Value"]
+            current = end
+        starts.append(start)
+        running_total.append(end)
+
+    chart_df["start"] = starts
+    chart_df["end"] = running_total
+    chart_df["lower"] = chart_df[["start", "end"]].min(axis=1)
+    chart_df["upper"] = chart_df[["start", "end"]].max(axis=1)
+    chart_df["color_type"] = chart_df["Type"]
+    chart_df.loc[(chart_df["Type"] == "delta") & (chart_df["Value"] >= 0), "color_type"] = "increase"
+    chart_df.loc[(chart_df["Type"] == "delta") & (chart_df["Value"] < 0), "color_type"] = "decrease"
+
+    bars = alt.Chart(chart_df).mark_bar().encode(
+        x=alt.X("Step:N", sort=None, axis=alt.Axis(labelAngle=0, title=None)),
+        y=alt.Y("lower:Q", title="Revenue"),
+        y2="upper:Q",
+        color=alt.Color(
+            "color_type:N",
+            scale=alt.Scale(
+                domain=["total", "increase", "decrease"],
+                range=["#4C78A8", "#54A24B", "#E45756"],
+            ),
+            legend=None,
+        ),
+    )
+    labels = alt.Chart(chart_df).mark_text(dy=-8, fontSize=10).encode(
+        x=alt.X("Step:N", sort=None),
+        y=alt.Y("upper:Q"),
+        text=alt.Text("Value:Q", format=",.2f"),
+    )
+    return (bars + labels).properties(title=alt.TitleParams(text=title, anchor="middle"), height=330)
 
 
 def dataframe_height(df: pd.DataFrame, row_height: int = 35, header_height: int = 38, padding: int = 16) -> int:
@@ -595,6 +647,35 @@ if st.session_state.get("category_group_tables"):
     )
     st.markdown("**Promo Impact**")
     st.dataframe(format_promo_impact_table(category_promo_impact), width='stretch')
+
+    category_control_waterfall = build_selected_categories_waterfall_table(
+        group_df=st.session_state["category_group_tables"].get(selected_control_group, pd.DataFrame()),
+        baseline_dates=baseline_dates,
+        promo_dates=promo_dates,
+    )
+    category_testing_waterfall = build_selected_categories_waterfall_table(
+        group_df=st.session_state["category_group_tables"].get(selected_testing_group, pd.DataFrame()),
+        baseline_dates=baseline_dates,
+        promo_dates=promo_dates,
+    )
+    st.markdown("**Waterfall - Selected Categories Revenue Bridge**")
+    category_waterfall_control_col, _, category_waterfall_testing_col = st.columns([3, 1, 3])
+    with category_waterfall_control_col:
+        st.altair_chart(
+            build_selected_categories_waterfall_chart(
+                category_control_waterfall,
+                f"{_group_label(selected_control_group)}",
+            ),
+            width='stretch',
+        )
+    with category_waterfall_testing_col:
+        st.altair_chart(
+            build_selected_categories_waterfall_chart(
+                category_testing_waterfall,
+                f"{_group_label(selected_testing_group)}",
+            ),
+            width='stretch',
+        )
 
 if st.session_state.get("data") is not None:
     st.download_button(
