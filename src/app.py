@@ -822,7 +822,7 @@ if st.session_state.get("category_group_tables"):
             "PC1",
         )
 
-        promo_non_promo_toggle = st.toggle(
+    promo_non_promo_toggle = st.toggle(
         "Waterfall - Selected Categories Promo vs Non Promo",
         value=False,
     )
