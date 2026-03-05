@@ -449,13 +449,13 @@ if st.session_state.get("group_tables"):
         control_codes = group_store_map.get(selected_control_group, [])
         st.markdown(f"**{_group_label(selected_control_group)}**")
         st.caption(f"Selected store code(s): {', '.join(control_codes) if control_codes else 'None'}")
-        st.dataframe(format_funnel_table(control_df), use_container_width=True)
+        st.dataframe(format_funnel_table(control_df), width='stretch')
     with testing_table_col:
         testing_df = funnel_tables.get(selected_testing_group, pd.DataFrame())
         testing_codes = group_store_map.get(selected_testing_group, [])
         st.markdown(f"**{_group_label(selected_testing_group)}**")
         st.caption(f"Selected store code(s): {', '.join(testing_codes) if testing_codes else 'None'}")
-        st.dataframe(format_funnel_table(testing_df), use_container_width=True)
+        st.dataframe(format_funnel_table(control_df), width='stretch')
 
     promo_impact_df = build_promo_impact_table(
         funnel_tables=funnel_tables,
@@ -466,7 +466,7 @@ if st.session_state.get("group_tables"):
     st.caption(
         "Promo Impact includes % Diff and Abs Diff comparisons between testing and control groups."
     )
-    st.dataframe(format_promo_impact_table(promo_impact_df), use_container_width=True)
+    st.dataframe(format_funnel_table(control_df), width='stretch')
 
     weekday_kpis = st.session_state["group_tables"].get("weekday_pct_diff_kpis", pd.DataFrame())
     chart_df = weekday_kpis[weekday_kpis["group"].isin(selected_groups)].copy()
@@ -493,7 +493,7 @@ if st.session_state.get("group_tables"):
                 with row_cols[col_idx]:
                     st.altair_chart(
                         build_weekday_chart(chart_df=chart_df, kpi_col=kpi_col, title=title),
-                        use_container_width=True,
+                        width='stretch',
                     )
 
 if st.session_state.get("category_group_tables"):
@@ -516,10 +516,10 @@ if st.session_state.get("category_group_tables"):
     category_control_col, _, category_testing_col = st.columns([3, 1, 3])
     with category_control_col:
         st.markdown(f"**{_group_label(selected_control_group)}**")
-        st.dataframe(format_funnel_table(category_control_table), use_container_width=True)
+        st.dataframe(format_funnel_table(category_control_table), width='stretch')
     with category_testing_col:
         st.markdown(f"**{_group_label(selected_testing_group)}**")
-        st.dataframe(format_funnel_table(category_testing_table), use_container_width=True)
+        st.dataframe(format_funnel_table(category_testing_table), width='stretch')
 
     category_promo_impact = build_promo_impact_table(
         funnel_tables=category_funnel_tables,
@@ -527,7 +527,7 @@ if st.session_state.get("category_group_tables"):
         selected_testing_group=selected_testing_group,
     )
     st.markdown("**Promo Impact**")
-    st.dataframe(format_promo_impact_table(category_promo_impact), use_container_width=True)
+    st.dataframe(format_promo_impact_table(category_promo_impact), width='stretch')
 
 if st.session_state.get("data") is not None:
     st.download_button(
