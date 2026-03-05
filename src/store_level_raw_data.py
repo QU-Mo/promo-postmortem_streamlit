@@ -255,57 +255,29 @@ def build_group_period_tables(
         if filtered_df.empty:
             return _period_metrics(pd.DataFrame(columns=subset_df.columns))
 
-        weekday_frames = []
-        for weekday, weekday_df in filtered_df.groupby("weekday", dropna=False):
-            trackable_stores = weekday_df.loc[weekday_df["pedestrian_footfall"].notna(), "store_code"]
-            trackable_count = int(trackable_stores.nunique())
-            total_orders = weekday_df["orders"].fillna(0).sum()
-            incoming_visitors = weekday_df["incoming_visitors"].fillna(0).sum()
-            total_revenue = weekday_df["total_revenue"].fillna(0).sum()
-            total_quantity = weekday_df["total_quantity"].fillna(0).sum()
-            total_pc1 = weekday_df["total_PC1"].fillna(0).sum()
-            total_rp_revenue = weekday_df["total_RP_revenue"].fillna(0).sum()
-            total_promo_revenue = weekday_df["total_promo_revenue"].fillna(0).sum()
+        total_orders = filtered_df["orders"].fillna(0).sum()
+        incoming_visitors = filtered_df["incoming_visitors"].fillna(0).sum()
+        total_revenue = filtered_df["total_revenue"].fillna(0).sum()
+        total_quantity = filtered_df["total_quantity"].fillna(0).sum()
+        total_pc1 = filtered_df["total_PC1"].fillna(0).sum()
+        total_rp_revenue = filtered_df["total_RP_revenue"].fillna(0).sum()
+        total_promo_revenue = filtered_df["total_promo_revenue"].fillna(0).sum()
 
-            weekday_frames.append(
-                {
-                    "weekday": weekday,
-                    "pedestrian_footfall": weekday_df["pedestrian_footfall"].fillna(0).sum(),
-                    "footfall_trackable_stores_count": trackable_count,
-                    "store_absorption_rate": weekday_df["store_absorption_rate"].mean(),
-                    "incoming_visitors": incoming_visitors,
-                    "store_conversion_rate": weekday_df["store_conversion_rate"].mean(),
-                    "total_orders": total_orders,
-                    "total_revenue": total_revenue,
-                    "total_RP_revenue": total_rp_revenue,
-                    "total_promo_revenue": total_promo_revenue,
-                    "total_quantity": total_quantity,
-                    "total_PC1": total_pc1,
-                    "cal_store_conversion_rate": _safe_div(total_orders, incoming_visitors),
-                    "AOV": _safe_div(total_revenue, total_orders),
-                    "margin": _safe_div(total_pc1, total_revenue) * vat,
-                    "RP_revenue_share": _safe_div(total_rp_revenue, total_revenue),
-                    "promo_revenue_share": _safe_div(total_promo_revenue, total_revenue),
-                    "price_per_item": _safe_div(total_revenue, total_quantity),
-                }
-            )
-
-        weekday_df = pd.DataFrame(weekday_frames)
         return {
-            "pedestrian_footfall": weekday_df["pedestrian_footfall"].sum(),
+            "pedestrian_footfall": filtered_df["pedestrian_footfall"].fillna(0).sum(),
             "footfall_trackable_stores_count": int(filtered_df.loc[filtered_df["pedestrian_footfall"].notna(), "store_code"].nunique()),
-            "store_absorption_rate": weekday_df["store_absorption_rate"].mean(),
-            "incoming_visitors": weekday_df["incoming_visitors"].sum(),
-            "cal_store_conversion_rate": weekday_df["cal_store_conversion_rate"].mean(),
-            "total_orders": weekday_df["total_orders"].sum(),
-            "AOV": weekday_df["AOV"].mean(),
-            "total_quantity": weekday_df["total_quantity"].sum(),
-            "price_per_item": weekday_df["price_per_item"].mean(),
-            "total_revenue": weekday_df["total_revenue"].sum(),
-            "total_PC1": weekday_df["total_PC1"].sum(),
-            "margin": weekday_df["margin"].mean(),
-            "RP_revenue_share": weekday_df["RP_revenue_share"].mean(),
-            "promo_revenue_share": weekday_df["promo_revenue_share"].mean(),
+            "store_absorption_rate": filtered_df["store_absorption_rate"].mean(),
+            "incoming_visitors": incoming_visitors,
+            "cal_store_conversion_rate": _safe_div(total_orders, incoming_visitors),
+            "total_orders": total_orders,
+            "AOV": _safe_div(total_revenue, total_orders),
+            "total_quantity": total_quantity,
+            "price_per_item": _safe_div(total_revenue, total_quantity),
+            "total_revenue": total_revenue,
+            "total_PC1": total_pc1,
+            "margin": _safe_div(total_pc1, total_revenue) * vat,
+            "RP_revenue_share": _safe_div(total_rp_revenue, total_revenue),
+            "promo_revenue_share": _safe_div(total_promo_revenue, total_revenue),
         }
 
     def _funnel_table(baseline_metrics: dict[str, float], promo_metrics: dict[str, float]) -> pd.DataFrame:
