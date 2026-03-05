@@ -275,17 +275,17 @@ def build_selected_categories_existing_non_existing_waterfall_table(
     promo_total_revenue = promo_df["total_revenue"].sum(min_count=1)
 
     baseline_existing_insider_revenue = baseline_df.loc[
-        baseline_df["insider_customer_type"] == "existing insider", "total_revenue"
+        baseline_df["insider_customer_type"] == "EXISTING", "total_revenue"
     ].sum(min_count=1)
     promo_existing_insider_revenue = promo_df.loc[
-        promo_df["insider_customer_type"] == "existing insider", "total_revenue"
+        promo_df["insider_customer_type"] == "EXISTING", "total_revenue"
     ].sum(min_count=1)
 
     baseline_non_existing_revenue = baseline_df.loc[
-        baseline_df["insider_customer_type"] != "existing insider", "total_revenue"
+        baseline_df["insider_customer_type"] != "EXISTING", "total_revenue"
     ].sum(min_count=1)
     promo_non_existing_revenue = promo_df.loc[
-        promo_df["insider_customer_type"] != "existing insider", "total_revenue"
+        promo_df["insider_customer_type"] != "EXISTING", "total_revenue"
     ].sum(min_count=1)
 
     waterfall_rows = [
