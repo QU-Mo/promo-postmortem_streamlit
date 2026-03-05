@@ -305,6 +305,176 @@ def build_selected_categories_existing_non_existing_waterfall_table(
     return pd.DataFrame(waterfall_rows)
 
 
+def _build_metric_waterfall_table(
+    group_df: pd.DataFrame,
+    baseline_dates: list[date],
+    promo_dates: list[date],
+    metric_col: str,
+    step_labels: dict[str, str],
+    split_col: str,
+    split_positive_value: str,
+    total_label: str,
+) -> pd.DataFrame:
+    if group_df.empty:
+        return pd.DataFrame()
+
+    working_df = group_df.copy()
+    working_df["ordered_date"] = pd.to_datetime(working_df["ordered_date"]).dt.date
+    working_df[metric_col] = pd.to_numeric(working_df[metric_col], errors="coerce")
+
+    baseline_df = working_df[working_df["ordered_date"].isin(baseline_dates)]
+    promo_df = working_df[working_df["ordered_date"].isin(promo_dates)]
+
+    baseline_total = baseline_df[metric_col].sum(min_count=1)
+    promo_total = promo_df[metric_col].sum(min_count=1)
+
+    baseline_positive = baseline_df.loc[baseline_df[split_col] == split_positive_value, metric_col].sum(min_count=1)
+    promo_positive = promo_df.loc[promo_df[split_col] == split_positive_value, metric_col].sum(min_count=1)
+
+    baseline_negative = baseline_df.loc[baseline_df[split_col] != split_positive_value, metric_col].sum(min_count=1)
+    promo_negative = promo_df.loc[promo_df[split_col] != split_positive_value, metric_col].sum(min_count=1)
+
+    waterfall_rows = [
+        {"Step": step_labels["baseline"], "Value": baseline_total, "Type": "total"},
+        {"Step": step_labels["positive"], "Value": promo_positive - baseline_positive, "Type": "delta"},
+        {"Step": step_labels["negative"], "Value": promo_negative - baseline_negative, "Type": "delta"},
+        {"Step": step_labels["promo"], "Value": promo_total, "Type": "total"},
+    ]
+    return pd.DataFrame(waterfall_rows)
+
+
+def build_selected_categories_quantity_waterfall_table(
+    group_df: pd.DataFrame,
+    baseline_dates: list[date],
+    promo_dates: list[date],
+) -> pd.DataFrame:
+    return _build_metric_waterfall_table(
+        group_df=group_df,
+        baseline_dates=baseline_dates,
+        promo_dates=promo_dates,
+        metric_col="total_quantity",
+        step_labels={
+            "baseline": "Baseline period total quantity",
+            "positive": "RP quantity change",
+            "negative": "BP quantity change",
+            "promo": "Promo period total quantity",
+        },
+        split_col="price_type",
+        split_positive_value="RP",
+        total_label="quantity",
+    )
+
+
+def build_selected_categories_promo_non_promo_quantity_waterfall_table(
+    group_df: pd.DataFrame,
+    baseline_dates: list[date],
+    promo_dates: list[date],
+) -> pd.DataFrame:
+    return _build_metric_waterfall_table(
+        group_df=group_df,
+        baseline_dates=baseline_dates,
+        promo_dates=promo_dates,
+        metric_col="total_quantity",
+        step_labels={
+            "baseline": "Baseline period total quantity",
+            "positive": "Promo quantity change",
+            "negative": "Non promo quantity change",
+            "promo": "Promo period total quantity",
+        },
+        split_col="promo_check",
+        split_positive_value="promo",
+        total_label="quantity",
+    )
+
+
+def build_selected_categories_existing_non_existing_quantity_waterfall_table(
+    group_df: pd.DataFrame,
+    baseline_dates: list[date],
+    promo_dates: list[date],
+) -> pd.DataFrame:
+    return _build_metric_waterfall_table(
+        group_df=group_df,
+        baseline_dates=baseline_dates,
+        promo_dates=promo_dates,
+        metric_col="total_quantity",
+        step_labels={
+            "baseline": "Baseline period total quantity",
+            "positive": "Existing insider quantity change",
+            "negative": "New + non insider quantity change",
+            "promo": "Promo period total quantity",
+        },
+        split_col="insider_customer_type",
+        split_positive_value="EXISTING",
+        total_label="quantity",
+    )
+
+
+def build_selected_categories_pc1_waterfall_table(
+    group_df: pd.DataFrame,
+    baseline_dates: list[date],
+    promo_dates: list[date],
+) -> pd.DataFrame:
+    return _build_metric_waterfall_table(
+        group_df=group_df,
+        baseline_dates=baseline_dates,
+        promo_dates=promo_dates,
+        metric_col="total_PC1",
+        step_labels={
+            "baseline": "Baseline period total PC1",
+            "positive": "RP PC1 change",
+            "negative": "BP PC1 change",
+            "promo": "Promo period total PC1",
+        },
+        split_col="price_type",
+        split_positive_value="RP",
+        total_label="PC1",
+    )
+
+
+def build_selected_categories_promo_non_promo_pc1_waterfall_table(
+    group_df: pd.DataFrame,
+    baseline_dates: list[date],
+    promo_dates: list[date],
+) -> pd.DataFrame:
+    return _build_metric_waterfall_table(
+        group_df=group_df,
+        baseline_dates=baseline_dates,
+        promo_dates=promo_dates,
+        metric_col="total_PC1",
+        step_labels={
+            "baseline": "Baseline period total PC1",
+            "positive": "Promo PC1 change",
+            "negative": "Non promo PC1 change",
+            "promo": "Promo period total PC1",
+        },
+        split_col="promo_check",
+        split_positive_value="promo",
+        total_label="PC1",
+    )
+
+
+def build_selected_categories_existing_non_existing_pc1_waterfall_table(
+    group_df: pd.DataFrame,
+    baseline_dates: list[date],
+    promo_dates: list[date],
+) -> pd.DataFrame:
+    return _build_metric_waterfall_table(
+        group_df=group_df,
+        baseline_dates=baseline_dates,
+        promo_dates=promo_dates,
+        metric_col="total_PC1",
+        step_labels={
+            "baseline": "Baseline period total PC1",
+            "positive": "Existing insider PC1 change",
+            "negative": "New + non insider PC1 change",
+            "promo": "Promo period total PC1",
+        },
+        split_col="insider_customer_type",
+        split_positive_value="EXISTING",
+        total_label="PC1",
+    )
+
+
 
 
 def build_article_category_filter_options_sql(

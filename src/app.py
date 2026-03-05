@@ -253,7 +253,11 @@ def build_weekday_chart(
     )
 
 
-def build_selected_categories_waterfall_chart(waterfall_df: pd.DataFrame, title: str, y_axis_title: str) -> alt.Chart:
+def build_selected_categories_waterfall_chart(
+    waterfall_df: pd.DataFrame,
+    title: str,
+    y_axis_title: str = "Value",
+) -> alt.Chart:
     if waterfall_df.empty:
         return alt.Chart(pd.DataFrame({"Step": [], "Value": []})).mark_bar()
 
@@ -543,7 +547,7 @@ if st.session_state.get("group_tables") or st.session_state.get("category_group_
             index=2,
         )
 
-        info_control_col, _, info_testing_col = st.columns([3, 1, 3])
+        info_control_col, _, info_testing_col = st.columns([5, 1, 5])
     with info_control_col:
         selected_control_codes = group_store_map.get(selected_control_group, [])
         st.caption(f"Selected store code(s): {', '.join(selected_control_codes) if selected_control_codes else 'None'}")
@@ -561,7 +565,7 @@ if st.session_state.get("group_tables"):
     
 
     selected_groups = [selected_control_group, selected_testing_group]
-    control_table_col, _, testing_table_col = st.columns([3, 1, 3])
+    control_table_col, _, testing_table_col = st.columns([5, 1, 5])
     with control_table_col:
         control_df = funnel_tables.get(selected_control_group, pd.DataFrame())
         
@@ -649,7 +653,7 @@ if st.session_state.get("category_group_tables"):
         selected_control_group: category_control_table,
         selected_testing_group: category_testing_table,
     }
-    category_control_col, _, category_testing_col = st.columns([3, 1, 3])
+    category_control_col, _, category_testing_col = st.columns([5, 1, 5])
     with category_control_col:
         st.markdown(f"**{_group_label(selected_control_group)}**")
         st.dataframe(format_funnel_table(category_control_table), width='stretch')
@@ -676,12 +680,13 @@ if st.session_state.get("category_group_tables"):
         promo_dates=promo_dates,
     )
     st.markdown("**Waterfall - Selected Categories Existing Insider vs New+Non Insider Revenue Bridge**")
-    existing_split_control_col, _, existing_split_testing_col = st.columns([3, 1, 3])
+    existing_split_control_col, _, existing_split_testing_col = st.columns([5, 1, 5])
     with existing_split_control_col:
         st.altair_chart(
             build_selected_categories_waterfall_chart(
                 category_control_existing_split_waterfall,
                 f"{_group_label(selected_control_group)}",
+                y_axis_title="Revenue",
             ),
             width='stretch',
         )
@@ -690,11 +695,12 @@ if st.session_state.get("category_group_tables"):
             build_selected_categories_waterfall_chart(
                 category_testing_existing_split_waterfall,
                 f"{_group_label(selected_testing_group)}",
+                 y_axis_title="Revenue",
             ),
             width='stretch',
         )
 
-        category_control_promo_split_waterfall = build_selected_categories_promo_non_promo_waterfall_table(
+    category_control_promo_split_waterfall = build_selected_categories_promo_non_promo_waterfall_table(
         group_df=st.session_state["category_group_tables"].get(selected_control_group, pd.DataFrame()),
         baseline_dates=baseline_dates,
         promo_dates=promo_dates,
@@ -705,12 +711,13 @@ if st.session_state.get("category_group_tables"):
         promo_dates=promo_dates,
     )
     st.markdown("**Waterfall - Selected Categories Promo vs Non Promo Revenue Bridge**")
-    promo_split_control_col, _, promo_split_testing_col = st.columns([3, 1, 3])
+    promo_split_control_col, _, promo_split_testing_col = st.columns([5, 1, 5])
     with promo_split_control_col:
         st.altair_chart(
             build_selected_categories_waterfall_chart(
                 category_control_promo_split_waterfall,
                 f"{_group_label(selected_control_group)}",
+                y_axis_title="Revenue",
             ),
             width='stretch',
         )
@@ -719,6 +726,7 @@ if st.session_state.get("category_group_tables"):
             build_selected_categories_waterfall_chart(
                 category_testing_promo_split_waterfall,
                 f"{_group_label(selected_testing_group)}",
+                y_axis_title="Revenue",
             ),
             width='stretch',
         )
@@ -734,12 +742,13 @@ if st.session_state.get("category_group_tables"):
         promo_dates=promo_dates,
     )
     st.markdown("**Waterfall - Selected Categories RP vs BP Revenue Bridge**")
-    category_waterfall_control_col, _, category_waterfall_testing_col = st.columns([3, 1, 3])
+    category_waterfall_control_col, _, category_waterfall_testing_col = st.columns([5, 1, 5])
     with category_waterfall_control_col:
         st.altair_chart(
             build_selected_categories_waterfall_chart(
                 category_control_waterfall,
                 f"{_group_label(selected_control_group)}",
+                y_axis_title="Revenue",
             ),
             width='stretch',
         )
@@ -748,6 +757,197 @@ if st.session_state.get("category_group_tables"):
             build_selected_categories_waterfall_chart(
                 category_testing_waterfall,
                 f"{_group_label(selected_testing_group)}",
+                  y_axis_title="Revenue",
+            ),
+            width='stretch',
+        )
+
+    category_control_existing_split_quantity_waterfall = (
+        build_selected_categories_existing_non_existing_quantity_waterfall_table(
+            group_df=st.session_state["category_group_tables"].get(selected_control_group, pd.DataFrame()),
+            baseline_dates=baseline_dates,
+            promo_dates=promo_dates,
+        )
+    )
+    category_testing_existing_split_quantity_waterfall = (
+        build_selected_categories_existing_non_existing_quantity_waterfall_table(
+            group_df=st.session_state["category_group_tables"].get(selected_testing_group, pd.DataFrame()),
+            baseline_dates=baseline_dates,
+            promo_dates=promo_dates,
+        )
+    )
+    st.markdown("**Waterfall - Selected Categories Existing Insider vs New+Non Insider Quantity Bridge**")
+    existing_split_quantity_control_col, _, existing_split_quantity_testing_col = st.columns([5, 1, 5])
+    with existing_split_quantity_control_col:
+        st.altair_chart(
+            build_selected_categories_waterfall_chart(
+                category_control_existing_split_quantity_waterfall,
+                f"{_group_label(selected_control_group)}",
+                y_axis_title="Quantity",
+            ),
+            width='stretch',
+        )
+    with existing_split_quantity_testing_col:
+        st.altair_chart(
+            build_selected_categories_waterfall_chart(
+                category_testing_existing_split_quantity_waterfall,
+                f"{_group_label(selected_testing_group)}",
+                y_axis_title="Quantity",
+            ),
+            width='stretch',
+        )
+
+    category_control_promo_split_quantity_waterfall = build_selected_categories_promo_non_promo_quantity_waterfall_table(
+        group_df=st.session_state["category_group_tables"].get(selected_control_group, pd.DataFrame()),
+        baseline_dates=baseline_dates,
+        promo_dates=promo_dates,
+    )
+    category_testing_promo_split_quantity_waterfall = build_selected_categories_promo_non_promo_quantity_waterfall_table(
+        group_df=st.session_state["category_group_tables"].get(selected_testing_group, pd.DataFrame()),
+        baseline_dates=baseline_dates,
+        promo_dates=promo_dates,
+    )
+    st.markdown("**Waterfall - Selected Categories Promo vs Non Promo Quantity Bridge**")
+    promo_split_quantity_control_col, _, promo_split_quantity_testing_col = st.columns([5, 1, 5])
+    with promo_split_quantity_control_col:
+        st.altair_chart(
+            build_selected_categories_waterfall_chart(
+                category_control_promo_split_quantity_waterfall,
+                f"{_group_label(selected_control_group)}",
+                y_axis_title="Quantity",
+            ),
+            width='stretch',
+        )
+    with promo_split_quantity_testing_col:
+        st.altair_chart(
+            build_selected_categories_waterfall_chart(
+                category_testing_promo_split_quantity_waterfall,
+                f"{_group_label(selected_testing_group)}",
+                y_axis_title="Quantity",
+            ),
+            width='stretch',
+        )
+
+    category_control_quantity_waterfall = build_selected_categories_quantity_waterfall_table(
+        group_df=st.session_state["category_group_tables"].get(selected_control_group, pd.DataFrame()),
+        baseline_dates=baseline_dates,
+        promo_dates=promo_dates,
+    )
+    category_testing_quantity_waterfall = build_selected_categories_quantity_waterfall_table(
+        group_df=st.session_state["category_group_tables"].get(selected_testing_group, pd.DataFrame()),
+        baseline_dates=baseline_dates,
+        promo_dates=promo_dates,
+    )
+    st.markdown("**Waterfall - Selected Categories RP vs BP Quantity Bridge**")
+    quantity_waterfall_control_col, _, quantity_waterfall_testing_col = st.columns([5, 1, 5])
+    with quantity_waterfall_control_col:
+        st.altair_chart(
+            build_selected_categories_waterfall_chart(
+                category_control_quantity_waterfall,
+                f"{_group_label(selected_control_group)}",
+                y_axis_title="Quantity",
+            ),
+            width='stretch',
+        )
+    with quantity_waterfall_testing_col:
+        st.altair_chart(
+            build_selected_categories_waterfall_chart(
+                category_testing_quantity_waterfall,
+                f"{_group_label(selected_testing_group)}",
+                y_axis_title="Quantity",
+            ),
+            width='stretch',
+        )
+
+    category_control_existing_split_pc1_waterfall = build_selected_categories_existing_non_existing_pc1_waterfall_table(
+        group_df=st.session_state["category_group_tables"].get(selected_control_group, pd.DataFrame()),
+        baseline_dates=baseline_dates,
+        promo_dates=promo_dates,
+    )
+    category_testing_existing_split_pc1_waterfall = build_selected_categories_existing_non_existing_pc1_waterfall_table(
+        group_df=st.session_state["category_group_tables"].get(selected_testing_group, pd.DataFrame()),
+        baseline_dates=baseline_dates,
+        promo_dates=promo_dates,
+    )
+    st.markdown("**Waterfall - Selected Categories Existing Insider vs New+Non Insider PC1 Bridge**")
+    existing_split_pc1_control_col, _, existing_split_pc1_testing_col = st.columns([5, 1, 5])
+    with existing_split_pc1_control_col:
+        st.altair_chart(
+            build_selected_categories_waterfall_chart(
+                category_control_existing_split_pc1_waterfall,
+                f"{_group_label(selected_control_group)}",
+                y_axis_title="PC1",
+            ),
+            width='stretch',
+        )
+    with existing_split_pc1_testing_col:
+        st.altair_chart(
+            build_selected_categories_waterfall_chart(
+                category_testing_existing_split_pc1_waterfall,
+                f"{_group_label(selected_testing_group)}",
+                y_axis_title="PC1",
+            ),
+            width='stretch',
+        )
+
+    category_control_promo_split_pc1_waterfall = build_selected_categories_promo_non_promo_pc1_waterfall_table(
+        group_df=st.session_state["category_group_tables"].get(selected_control_group, pd.DataFrame()),
+        baseline_dates=baseline_dates,
+        promo_dates=promo_dates,
+    )
+    category_testing_promo_split_pc1_waterfall = build_selected_categories_promo_non_promo_pc1_waterfall_table(
+        group_df=st.session_state["category_group_tables"].get(selected_testing_group, pd.DataFrame()),
+        baseline_dates=baseline_dates,
+        promo_dates=promo_dates,
+    )
+    st.markdown("**Waterfall - Selected Categories Promo vs Non Promo PC1 Bridge**")
+    promo_split_pc1_control_col, _, promo_split_pc1_testing_col = st.columns([5, 1, 5])
+    with promo_split_pc1_control_col:
+        st.altair_chart(
+            build_selected_categories_waterfall_chart(
+                category_control_promo_split_pc1_waterfall,
+                f"{_group_label(selected_control_group)}",
+                y_axis_title="PC1",
+            ),
+            width='stretch',
+        )
+    with promo_split_pc1_testing_col:
+        st.altair_chart(
+            build_selected_categories_waterfall_chart(
+                category_testing_promo_split_pc1_waterfall,
+                f"{_group_label(selected_testing_group)}",
+                y_axis_title="PC1",
+            ),
+            width='stretch',
+        )
+
+    category_control_pc1_waterfall = build_selected_categories_pc1_waterfall_table(
+        group_df=st.session_state["category_group_tables"].get(selected_control_group, pd.DataFrame()),
+        baseline_dates=baseline_dates,
+        promo_dates=promo_dates,
+    )
+    category_testing_pc1_waterfall = build_selected_categories_pc1_waterfall_table(
+        group_df=st.session_state["category_group_tables"].get(selected_testing_group, pd.DataFrame()),
+        baseline_dates=baseline_dates,
+        promo_dates=promo_dates,
+    )
+    st.markdown("**Waterfall - Selected Categories RP vs BP PC1 Bridge**")
+    pc1_waterfall_control_col, _, pc1_waterfall_testing_col = st.columns([5, 1, 5])
+    with pc1_waterfall_control_col:
+        st.altair_chart(
+            build_selected_categories_waterfall_chart(
+                category_control_pc1_waterfall,
+                f"{_group_label(selected_control_group)}",
+                y_axis_title="PC1",
+            ),
+            width='stretch',
+        )
+    with pc1_waterfall_testing_col:
+        st.altair_chart(
+            build_selected_categories_waterfall_chart(
+                category_testing_pc1_waterfall,
+                f"{_group_label(selected_testing_group)}",
+                y_axis_title="PC1",
             ),
             width='stretch',
         )
