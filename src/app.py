@@ -10,7 +10,10 @@ from store_level_raw_data import (
     fetch_raw_data,
     fetch_store_code_options,
 )
-from promo_article_section_level_raw_data import fetch_promo_article_section_level_raw_data
+from promo_article_section_level_raw_data import (
+    build_selected_categories_funnel_table,
+    fetch_promo_article_section_level_raw_data,
+)
 
 
 st.set_page_config(page_title="Promo Post-Mortem", layout="wide")
@@ -155,11 +158,15 @@ RATE_KPIS = {
     "Promo Impact",
 }
 
+RATE_KPI_KEYWORDS = ("margin", "rate", "share")
+
 
 def _format_kpi_value(kpi: str, value: float, is_pct_diff: bool = False) -> str:
     if pd.isna(value):
         return "-"
-    if is_pct_diff or kpi in RATE_KPIS:
+    normalized_kpi = str(kpi).strip().lower()
+    is_rate_kpi = normalized_kpi in RATE_KPIS or any(keyword in normalized_kpi for keyword in RATE_KPI_KEYWORDS)
+    if is_pct_diff or is_rate_kpi:
         return f"{value:.2%}"
     return f"{value:,.0f}"
 
@@ -395,23 +402,29 @@ if st.sidebar.button("Run"):
         st.error(f"Error running query: {e}")
 
 if st.session_state.get("group_tables"):
-    st.subheader("Store Level - Funnel Analysis (Exclude Sunday)")
+    
     group_store_map = {
-        "Control Group 1": control_group_1,
-        "Control Group 2": control_group_2,
-        "Testing Group 1": testing_group_1,
-        "Testing Group 2": testing_group_2,
-    }
-    group_description_map = {
-        "Control Group 1": control_group_1_note,
-        "Control Group 2": control_group_2_note,
-        "Testing Group 1": testing_group_1_note,
-        "Testing Group 2": testing_group_2_note,
-    }
+    "Control Group 1": control_group_1,
+    "Control Group 2": control_group_2,
+    "Testing Group 1": testing_group_1,
+    "Testing Group 2": testing_group_2,
+}
+group_description_map = {
+    "Control Group 1": control_group_1_note,
+    "Control Group 2": control_group_2_note,
+    "Testing Group 1": testing_group_1_note,
+    "Testing Group 2": testing_group_2_note,
+}
 
-    def _group_label(group_name: str) -> str:
-        desc = group_description_map.get(group_name, "").strip()
-        return f"{group_name} ({desc})" if desc else group_name
+
+def _group_label(group_name: str) -> str:
+    desc = group_description_map.get(group_name, "").strip()
+    return f"{group_name} ({desc})" if desc else group_name
+
+
+selected_control_group = "Control Group 1"
+selected_testing_group = "Testing Group 1"
+if st.session_state.get("group_tables") or st.session_state.get("category_group_tables"):
 
     funnel_tables = st.session_state["group_tables"].get("funnel_tables", {})
     control_col, vs_col, testing_col = st.columns([3, 1, 3])
@@ -430,6 +443,10 @@ if st.session_state.get("group_tables"):
             index=0,
         )
 
+if st.session_state.get("group_tables"):
+    st.subheader("Store Level (All Categories) - Funnel Analysis (Exclude Sunday)")
+    funnel_tables = st.session_state["group_tables"].get("funnel_tables", {})
+
     selected_groups = [selected_control_group, selected_testing_group]
     control_table_col, _, testing_table_col = st.columns([3, 1, 3])
     with control_table_col:
@@ -437,13 +454,13 @@ if st.session_state.get("group_tables"):
         control_codes = group_store_map.get(selected_control_group, [])
         st.markdown(f"**{_group_label(selected_control_group)}**")
         st.caption(f"Selected store code(s): {', '.join(control_codes) if control_codes else 'None'}")
-        st.dataframe(format_funnel_table(control_df), use_container_width=True)
+        st.dataframe(format_funnel_table(control_df), width='stretch')
     with testing_table_col:
         testing_df = funnel_tables.get(selected_testing_group, pd.DataFrame())
         testing_codes = group_store_map.get(selected_testing_group, [])
         st.markdown(f"**{_group_label(selected_testing_group)}**")
         st.caption(f"Selected store code(s): {', '.join(testing_codes) if testing_codes else 'None'}")
-        st.dataframe(format_funnel_table(testing_df), use_container_width=True)
+        st.dataframe(format_funnel_table(testing_df), width='stretch')
 
     promo_impact_df = build_promo_impact_table(
         funnel_tables=funnel_tables,
@@ -454,7 +471,7 @@ if st.session_state.get("group_tables"):
     st.caption(
         "Promo Impact includes % Diff and Abs Diff comparisons between testing and control groups."
     )
-    st.dataframe(format_promo_impact_table(promo_impact_df), use_container_width=True)
+    st.dataframe(format_promo_impact_table(promo_impact_df), width='stretch')
 
     weekday_kpis = st.session_state["group_tables"].get("weekday_pct_diff_kpis", pd.DataFrame())
     chart_df = weekday_kpis[weekday_kpis["group"].isin(selected_groups)].copy()
@@ -474,22 +491,46 @@ if st.session_state.get("group_tables"):
             ("Promo Revenue Share % Diff by Weekday", "promo_revenue_share_pct_diff"),
         ]
 
-        for i in range(0, len(weekday_charts), 2):
-            row_cols = st.columns(2)
-            for col_idx, chart_config in enumerate(weekday_charts[i : i + 2]):
-                title, kpi_col = chart_config
-                with row_cols[col_idx]:
-                    st.altair_chart(
-                        build_weekday_chart(chart_df=chart_df, kpi_col=kpi_col, title=title),
-                        use_container_width=True,
-                    )
+        for title, kpi_col in weekday_charts:
+            st.altair_chart(
+                build_weekday_chart(chart_df=chart_df, kpi_col=kpi_col, title=title),
+                width='stretch',
+            )
 
 if st.session_state.get("category_group_tables"):
-    st.subheader("Store Level -Selected Categories Analysis")
-    for group_name in ["Control Group 1", "Control Group 2", "Testing Group 1", "Testing Group 2"]:
-        group_df = st.session_state["category_group_tables"].get(group_name, pd.DataFrame())
-        st.markdown(f"**{group_name}**")
-        st.dataframe(group_df, use_container_width=True)
+    st.subheader("Deep Dive： Store Level Selected Categories Analysis")
+    category_control_table = build_selected_categories_funnel_table(
+        group_df=st.session_state["category_group_tables"].get(selected_control_group, pd.DataFrame()),
+        baseline_dates=baseline_dates,
+        promo_dates=promo_dates,
+        vat=vat,
+    )
+    category_testing_table = build_selected_categories_funnel_table(
+        group_df=st.session_state["category_group_tables"].get(selected_testing_group, pd.DataFrame()),
+        baseline_dates=baseline_dates,
+        promo_dates=promo_dates,
+        vat=vat,
+    )
+
+    category_funnel_tables = {
+        selected_control_group: category_control_table,
+        selected_testing_group: category_testing_table,
+    }
+    category_control_col, _, category_testing_col = st.columns([3, 1, 3])
+    with category_control_col:
+        st.markdown(f"**{_group_label(selected_control_group)}**")
+        st.dataframe(format_funnel_table(category_control_table), width='stretch')
+    with category_testing_col:
+        st.markdown(f"**{_group_label(selected_testing_group)}**")
+        st.dataframe(format_funnel_table(category_testing_table), width='stretch')
+
+    category_promo_impact = build_promo_impact_table(
+        funnel_tables=category_funnel_tables,
+        selected_control_group=selected_control_group,
+        selected_testing_group=selected_testing_group,
+    )
+    st.markdown("**Promo Impact**")
+    st.dataframe(format_promo_impact_table(category_promo_impact), width='stretch')
 
 if st.session_state.get("data") is not None:
     st.download_button(
