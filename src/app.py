@@ -225,11 +225,35 @@ def build_weekday_chart(
         color=alt.Color("group:N", legend=alt.Legend(orient="bottom", direction="horizontal", title=None)),
     )
 
-    bars = base.mark_bar().encode(
+    bars = base.mark_bar().encode(xOffset="group:N")
+    positive_labels = base.transform_filter(alt.datum[kpi_col] >= 0).mark_text(dy=-8, fontSize=9).encode(
+        text=alt.Text(f"{kpi_col}:Q", format=format_pattern),
         xOffset="group:N",
     )
-    labels = base.mark_text(dy=-8, fontSize=9).encode(text=alt.Text(f"{kpi_col}:Q", format=format_pattern), xOffset="group:N")
-    return (bars + labels).properties(title=title, height=360)
+    negative_labels = base.transform_filter(alt.datum[kpi_col] < 0).mark_text(dy=10, fontSize=9).encode(
+        text=alt.Text(f"{kpi_col}:Q", format=format_pattern),
+        xOffset="group:N",
+    )
+    return (bars + positive_labels + negative_labels).properties(
+        title=alt.TitleParams(text=title, anchor="middle"),
+        height=360,
+    ).configure_legend(
+        orient="bottom",
+        direction="horizontal",
+        title=None,
+    )
+
+
+def dataframe_height(df: pd.DataFrame, row_height: int = 35, header_height: int = 38, padding: int = 16) -> int:
+    if df.empty:
+        return 140
+    return max(140, min(1200, header_height + len(df) * row_height + padding))
+
+
+def format_date_list(dates: list[date]) -> str:
+    if not dates:
+        return "None"
+    return f"{dates[0].isoformat()} to {dates[-1].isoformat()}"
 
 
 st.title("Promo Post Mortem")
@@ -401,9 +425,9 @@ if st.sidebar.button("Run"):
         st.session_state["category_group_tables"] = {}
         st.error(f"Error running query: {e}")
 
-if st.session_state.get("group_tables"):
+
     
-    group_store_map = {
+group_store_map = {
     "Control Group 1": control_group_1,
     "Control Group 2": control_group_2,
     "Testing Group 1": testing_group_1,
@@ -425,8 +449,25 @@ def _group_label(group_name: str) -> str:
 selected_control_group = "Control Group 1"
 selected_testing_group = "Testing Group 1"
 if st.session_state.get("group_tables") or st.session_state.get("category_group_tables"):
+    st.markdown(
+        """
+        <style>
+            div[data-testid="stVerticalBlockBorderWrapper"]:has(#group-compare-anchor) {
+                position: sticky;
+                top: 0;
+                z-index: 99;
+                background: white;
+                padding-top: 0.5rem;
+                padding-bottom: 0.5rem;
+                border-bottom: 1px solid rgba(49, 51, 63, 0.2);
+            }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.markdown('<span id="group-compare-anchor"></span>', unsafe_allow_html=True)
 
-    funnel_tables = st.session_state["group_tables"].get("funnel_tables", {})
+    
     control_col, vs_col, testing_col = st.columns([3, 1, 3])
     with control_col:
         selected_control_group = st.selectbox(
@@ -443,6 +484,18 @@ if st.session_state.get("group_tables") or st.session_state.get("category_group_
             index=0,
         )
 
+        info_control_col, _, info_testing_col = st.columns([3, 1, 3])
+    with info_control_col:
+        selected_control_codes = group_store_map.get(selected_control_group, [])
+        st.caption(f"Selected store code(s): {', '.join(selected_control_codes) if selected_control_codes else 'None'}")
+        st.caption(f"Baseline period: {format_date_list(baseline_dates)}")
+        st.caption(f"Promo period: {format_date_list(promo_dates)}")
+    with info_testing_col:
+        selected_testing_codes = group_store_map.get(selected_testing_group, [])
+        st.caption(f"Selected store code(s): {', '.join(selected_testing_codes) if selected_testing_codes else 'None'}")
+        st.caption(f"Baseline period: {format_date_list(baseline_dates)}")
+        st.caption(f"Promo period: {format_date_list(promo_dates)}")
+
 if st.session_state.get("group_tables"):
     st.subheader("Store Level (All Categories) - Funnel Analysis (Exclude Sunday)")
     funnel_tables = st.session_state["group_tables"].get("funnel_tables", {})
@@ -451,16 +504,23 @@ if st.session_state.get("group_tables"):
     control_table_col, _, testing_table_col = st.columns([3, 1, 3])
     with control_table_col:
         control_df = funnel_tables.get(selected_control_group, pd.DataFrame())
-        control_codes = group_store_map.get(selected_control_group, [])
+        
         st.markdown(f"**{_group_label(selected_control_group)}**")
-        st.caption(f"Selected store code(s): {', '.join(control_codes) if control_codes else 'None'}")
-        st.dataframe(format_funnel_table(control_df), width='stretch')
+        st.dataframe(
+            format_funnel_table(control_df),
+            width='stretch',
+            height=dataframe_height(control_df),
+        )
+
     with testing_table_col:
         testing_df = funnel_tables.get(selected_testing_group, pd.DataFrame())
-        testing_codes = group_store_map.get(selected_testing_group, [])
+        
         st.markdown(f"**{_group_label(selected_testing_group)}**")
-        st.caption(f"Selected store code(s): {', '.join(testing_codes) if testing_codes else 'None'}")
-        st.dataframe(format_funnel_table(testing_df), width='stretch')
+        st.dataframe(
+            format_funnel_table(testing_df),
+            width='stretch',
+            height=dataframe_height(testing_df),
+        )
 
     promo_impact_df = build_promo_impact_table(
         funnel_tables=funnel_tables,
@@ -471,7 +531,11 @@ if st.session_state.get("group_tables"):
     st.caption(
         "Promo Impact includes % Diff and Abs Diff comparisons between testing and control groups."
     )
-    st.dataframe(format_promo_impact_table(promo_impact_df), width='stretch')
+    st.dataframe(
+        format_promo_impact_table(promo_impact_df),
+        width='stretch',
+        height=dataframe_height(promo_impact_df),
+    )
 
     weekday_kpis = st.session_state["group_tables"].get("weekday_pct_diff_kpis", pd.DataFrame())
     chart_df = weekday_kpis[weekday_kpis["group"].isin(selected_groups)].copy()

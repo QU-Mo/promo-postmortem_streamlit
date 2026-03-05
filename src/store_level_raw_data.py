@@ -52,7 +52,6 @@ def build_raw_data_sql(
         ROUND(COALESCE(SUM(CASE WHEN article_price_red_eur IS NOT NULL THEN profit_contribution_1_eur_incl_forecast END), 0), 2) AS total_RP_PC1
       FROM `{order_table}` AS multichannel_orders
       LEFT JOIN UNNEST(multichannel_orders.order_items) AS multichannel_orders__order_items
-      LEFT JOIN UNNEST(promotions) as multichannel_orders__order_items__promotions
       WHERE multichannel_orders.channel = @order_channel
         AND multichannel_orders.company_name_short = @order_company_name_short
         AND multichannel_orders.country = @order_country
