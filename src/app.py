@@ -129,28 +129,47 @@ def build_promo_impact_table(
     testing_df = funnel_tables.get(selected_testing_group)
     if control_df is None or testing_df is None:
         return pd.DataFrame()
+    
+    required_cols = {"KPI", "% Diff (Promo vs Baseline)", "Abs Diff (Promo - Baseline)"}
+    if not required_cols.issubset(control_df.columns) or not required_cols.issubset(testing_df.columns):
+        return pd.DataFrame()
 
     control_metrics = control_df[["KPI", "% Diff (Promo vs Baseline)", "Abs Diff (Promo - Baseline)"]].rename(
         columns={
-            "% Diff (Promo vs Baseline)": f"{selected_control_group} % Diff (Promo vs Baseline)",
-            "Abs Diff (Promo - Baseline)": f"{selected_control_group} Abs Diff (Promo vs Baseline)",
+            "% Diff (Promo vs Baseline)": "control_pct_diff",
+            "Abs Diff (Promo - Baseline)": "control_abs_diff",
         }
     )
     testing_metrics = testing_df[["KPI", "% Diff (Promo vs Baseline)", "Abs Diff (Promo - Baseline)"]].rename(
         columns={
-            "% Diff (Promo vs Baseline)": f"{selected_testing_group} % Diff (Promo vs Baseline)",
-            "Abs Diff (Promo - Baseline)": f"{selected_testing_group} Abs Diff (Promo vs Baseline)",
+            "% Diff (Promo vs Baseline)": "testing_pct_diff",
+            "Abs Diff (Promo - Baseline)": "testing_abs_diff",
         }
     )
 
     merged = testing_metrics.merge(control_metrics, on="KPI", how="inner")
+
+    control_label = selected_control_group
+    testing_label = selected_testing_group
+    if selected_control_group == selected_testing_group:
+        control_label = f"{selected_control_group} (Control)"
+        testing_label = f"{selected_testing_group} (Testing)"
+
+    merged = merged.rename(
+        columns={
+            "testing_pct_diff": f"{testing_label} % Diff (Promo vs Baseline)",
+            "testing_abs_diff": f"{testing_label} Abs Diff (Promo vs Baseline)",
+            "control_pct_diff": f"{control_label} % Diff (Promo vs Baseline)",
+            "control_abs_diff": f"{control_label} Abs Diff (Promo vs Baseline)",
+        }
+    )
     merged["Promo Impact (Testing Group 1 %Diff - Control Group 1 %Diff )"] = (
-        merged[f"{selected_testing_group} % Diff (Promo vs Baseline)"]
-        - merged[f"{selected_control_group} % Diff (Promo vs Baseline)"]
+         merged[f"{testing_label} % Diff (Promo vs Baseline)"]
+        - merged[f"{control_label} % Diff (Promo vs Baseline)"]
     )
     merged["Promo Impact (Testing Group 1 Abs Diff - Control Group 1 Abs Diff )"] = (
-        merged[f"{selected_testing_group} Abs Diff (Promo vs Baseline)"]
-        - merged[f"{selected_control_group} Abs Diff (Promo vs Baseline)"]
+        merged[f"{testing_label} Abs Diff (Promo vs Baseline)"]
+        - merged[f"{control_label} Abs Diff (Promo vs Baseline)"]
     )
     return merged
 
