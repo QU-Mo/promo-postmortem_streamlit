@@ -158,11 +158,15 @@ RATE_KPIS = {
     "Promo Impact",
 }
 
+RATE_KPI_KEYWORDS = ("margin", "rate", "share")
+
 
 def _format_kpi_value(kpi: str, value: float, is_pct_diff: bool = False) -> str:
     if pd.isna(value):
         return "-"
-    if is_pct_diff or kpi in RATE_KPIS:
+    normalized_kpi = str(kpi).strip().lower()
+    is_rate_kpi = normalized_kpi in RATE_KPIS or any(keyword in normalized_kpi for keyword in RATE_KPI_KEYWORDS)
+    if is_pct_diff or is_rate_kpi:
         return f"{value:.2%}"
     return f"{value:,.0f}"
 
