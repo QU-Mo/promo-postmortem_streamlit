@@ -11,9 +11,15 @@ from store_level_raw_data import (
     fetch_store_code_options,
 )
 from promo_article_section_level_raw_data import (
+    build_selected_categories_existing_non_existing_pc1_waterfall_table,
+    build_selected_categories_existing_non_existing_quantity_waterfall_table,
     build_selected_categories_existing_non_existing_waterfall_table,
     build_selected_categories_funnel_table,
+    build_selected_categories_pc1_waterfall_table,
+    build_selected_categories_promo_non_promo_pc1_waterfall_table,
+    build_selected_categories_promo_non_promo_quantity_waterfall_table,
     build_selected_categories_promo_non_promo_waterfall_table,
+    build_selected_categories_quantity_waterfall_table,
     build_selected_categories_waterfall_table,
     fetch_promo_article_section_level_raw_data,
 )
@@ -247,7 +253,7 @@ def build_weekday_chart(
     )
 
 
-def build_selected_categories_waterfall_chart(waterfall_df: pd.DataFrame, title: str) -> alt.Chart:
+def build_selected_categories_waterfall_chart(waterfall_df: pd.DataFrame, title: str, y_axis_title: str) -> alt.Chart:
     if waterfall_df.empty:
         return alt.Chart(pd.DataFrame({"Step": [], "Value": []})).mark_bar()
 
@@ -279,7 +285,7 @@ def build_selected_categories_waterfall_chart(waterfall_df: pd.DataFrame, title:
 
     bars = alt.Chart(chart_df).mark_bar().encode(
         x=alt.X("Step:N", sort=None, axis=alt.Axis(labelAngle=0, title=None)),
-        y=alt.Y("lower:Q", title="Revenue"),
+        y=alt.Y("lower:Q", title=y_axis_title),
         y2="upper:Q",
         color=alt.Color(
             "color_type:N",
