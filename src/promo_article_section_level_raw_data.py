@@ -223,6 +223,88 @@ def build_selected_categories_waterfall_table(
     return pd.DataFrame(waterfall_rows)
 
 
+def build_selected_categories_promo_non_promo_waterfall_table(
+    group_df: pd.DataFrame,
+    baseline_dates: list[date],
+    promo_dates: list[date],
+) -> pd.DataFrame:
+    if group_df.empty:
+        return pd.DataFrame()
+
+    working_df = group_df.copy()
+    working_df["ordered_date"] = pd.to_datetime(working_df["ordered_date"]).dt.date
+    working_df["total_revenue"] = pd.to_numeric(working_df["total_revenue"], errors="coerce")
+
+    baseline_df = working_df[working_df["ordered_date"].isin(baseline_dates)]
+    promo_df = working_df[working_df["ordered_date"].isin(promo_dates)]
+
+    baseline_total_revenue = baseline_df["total_revenue"].sum(min_count=1)
+    promo_total_revenue = promo_df["total_revenue"].sum(min_count=1)
+
+    baseline_promo_revenue = baseline_df.loc[baseline_df["promo_check"] == "promo", "total_revenue"].sum(min_count=1)
+    promo_period_promo_revenue = promo_df.loc[promo_df["promo_check"] == "promo", "total_revenue"].sum(min_count=1)
+
+    baseline_non_promo_revenue = baseline_df.loc[baseline_df["promo_check"] != "promo", "total_revenue"].sum(min_count=1)
+    promo_period_non_promo_revenue = promo_df.loc[promo_df["promo_check"] != "promo", "total_revenue"].sum(min_count=1)
+
+    waterfall_rows = [
+        {"Step": "Baseline period total revenue", "Value": baseline_total_revenue, "Type": "total"},
+        {"Step": "Promo revenue change", "Value": promo_period_promo_revenue - baseline_promo_revenue, "Type": "delta"},
+        {"Step": "Non promo revenue change", "Value": promo_period_non_promo_revenue - baseline_non_promo_revenue, "Type": "delta"},
+        {"Step": "Promo period total revenue", "Value": promo_total_revenue, "Type": "total"},
+    ]
+    return pd.DataFrame(waterfall_rows)
+
+
+def build_selected_categories_existing_non_existing_waterfall_table(
+    group_df: pd.DataFrame,
+    baseline_dates: list[date],
+    promo_dates: list[date],
+) -> pd.DataFrame:
+    if group_df.empty:
+        return pd.DataFrame()
+
+    working_df = group_df.copy()
+    working_df["ordered_date"] = pd.to_datetime(working_df["ordered_date"]).dt.date
+    working_df["total_revenue"] = pd.to_numeric(working_df["total_revenue"], errors="coerce")
+
+    baseline_df = working_df[working_df["ordered_date"].isin(baseline_dates)]
+    promo_df = working_df[working_df["ordered_date"].isin(promo_dates)]
+
+    baseline_total_revenue = baseline_df["total_revenue"].sum(min_count=1)
+    promo_total_revenue = promo_df["total_revenue"].sum(min_count=1)
+
+    baseline_existing_insider_revenue = baseline_df.loc[
+        baseline_df["insider_customer_type"] == "existing insider", "total_revenue"
+    ].sum(min_count=1)
+    promo_existing_insider_revenue = promo_df.loc[
+        promo_df["insider_customer_type"] == "existing insider", "total_revenue"
+    ].sum(min_count=1)
+
+    baseline_non_existing_revenue = baseline_df.loc[
+        baseline_df["insider_customer_type"] != "existing insider", "total_revenue"
+    ].sum(min_count=1)
+    promo_non_existing_revenue = promo_df.loc[
+        promo_df["insider_customer_type"] != "existing insider", "total_revenue"
+    ].sum(min_count=1)
+
+    waterfall_rows = [
+        {"Step": "Baseline period total revenue", "Value": baseline_total_revenue, "Type": "total"},
+        {
+            "Step": "Existing insider revenue change",
+            "Value": promo_existing_insider_revenue - baseline_existing_insider_revenue,
+            "Type": "delta",
+        },
+        {
+            "Step": "New + non insider revenue change",
+            "Value": promo_non_existing_revenue - baseline_non_existing_revenue,
+            "Type": "delta",
+        },
+        {"Step": "Promo period total revenue", "Value": promo_total_revenue, "Type": "total"},
+    ]
+    return pd.DataFrame(waterfall_rows)
+
+
 
 
 def build_article_category_filter_options_sql(

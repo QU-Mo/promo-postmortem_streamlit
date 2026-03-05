@@ -11,7 +11,9 @@ from store_level_raw_data import (
     fetch_store_code_options,
 )
 from promo_article_section_level_raw_data import (
+    build_selected_categories_existing_non_existing_waterfall_table,
     build_selected_categories_funnel_table,
+    build_selected_categories_promo_non_promo_waterfall_table,
     build_selected_categories_waterfall_table,
     fetch_promo_article_section_level_raw_data,
 )
@@ -227,11 +229,11 @@ def build_weekday_chart(
     )
 
     bars = base.mark_bar().encode(xOffset="group:N")
-    positive_labels = base.transform_filter(alt.datum[kpi_col] >= 0).mark_text(dy=-8, fontSize=9).encode(
+    positive_labels = base.transform_filter(alt.datum[kpi_col] >= 0).mark_text(dy=-10, fontSize=13, fontWeight="bold").encode(
         text=alt.Text(f"{kpi_col}:Q", format=format_pattern),
         xOffset="group:N",
     )
-    negative_labels = base.transform_filter(alt.datum[kpi_col] < 0).mark_text(dy=10, fontSize=9).encode(
+    negative_labels = base.transform_filter(alt.datum[kpi_col] < 0).mark_text(dy=12, fontSize=13, fontWeight="bold").encode(
         text=alt.Text(f"{kpi_col}:Q", format=format_pattern),
         xOffset="group:N",
     )
@@ -288,7 +290,7 @@ def build_selected_categories_waterfall_chart(waterfall_df: pd.DataFrame, title:
             legend=None,
         ),
     )
-    labels = alt.Chart(chart_df).mark_text(dy=-8, fontSize=10).encode(
+    labels = alt.Chart(chart_df).mark_text(dy=-10, fontSize=13, fontWeight="bold").encode(
         x=alt.X("Step:N", sort=None),
         y=alt.Y("upper:Q"),
         text=alt.Text("Value:Q", format=",.2f"),
@@ -524,7 +526,7 @@ if st.session_state.get("group_tables") or st.session_state.get("category_group_
     with control_col:
         selected_control_group = st.selectbox(
             "Control",
-            options=["Control Group 1", "Control Group 2"],
+            options=["Control Group 1", "Control Group 2", "Testing Group 1", "Testing Group 2"],
             index=0,
         )
     with vs_col:
@@ -532,8 +534,8 @@ if st.session_state.get("group_tables") or st.session_state.get("category_group_
     with testing_col:
         selected_testing_group = st.selectbox(
             "Testing",
-            options=["Testing Group 1", "Testing Group 2"],
-            index=0,
+            options=["Control Group 1", "Control Group 2", "Testing Group 1", "Testing Group 2"],
+            index=2,
         )
 
         info_control_col, _, info_testing_col = st.columns([3, 1, 3])
@@ -551,6 +553,7 @@ if st.session_state.get("group_tables") or st.session_state.get("category_group_
 if st.session_state.get("group_tables"):
     st.subheader("Store Level (All Categories) - Funnel Analysis (Exclude Sunday)")
     funnel_tables = st.session_state["group_tables"].get("funnel_tables", {})
+    show_all_funnel_kpi_charts = st.toggle("Show all Funnel KPI comparison charts", value=False)
 
     selected_groups = [selected_control_group, selected_testing_group]
     control_table_col, _, testing_table_col = st.columns([3, 1, 3])
@@ -589,29 +592,31 @@ if st.session_state.get("group_tables"):
         height=dataframe_height(promo_impact_df),
     )
 
-    weekday_kpis = st.session_state["group_tables"].get("weekday_pct_diff_kpis", pd.DataFrame())
-    chart_df = weekday_kpis[weekday_kpis["group"].isin(selected_groups)].copy()
-    if not chart_df.empty:
-        chart_df["group"] = chart_df["group"].map(_group_label)
-        weekday_charts = [
-            ("Avg Store Absorption Rate % Diff by Weekday", "avg_store_absorption_rate_pct_diff"),
-            ("Cal Store Conversion Rate % Diff by Weekday", "cal_store_conversion_rate_pct_diff"),
-            ("Total Orders % Diff by Weekday", "total_orders_pct_diff"),
-            ("AOV % Diff by Weekday", "AOV_pct_diff"),
-            ("Total Quantity % Diff by Weekday", "total_quantity_pct_diff"),
-            ("Price per Item % Diff by Weekday", "price_per_item_pct_diff"),
-            ("Total Revenue % Diff by Weekday", "total_revenue_pct_diff"),
-            ("Total PC1 % Diff by Weekday", "total_PC1_pct_diff"),
-            ("Margin % Diff by Weekday", "margin_pct_diff"),
-            ("RP Revenue Share % Diff by Weekday", "RP_revenue_share_pct_diff"),
-            ("Promo Revenue Share % Diff by Weekday", "promo_revenue_share_pct_diff"),
-        ]
+    if show_all_funnel_kpi_charts:
+        weekday_kpis = st.session_state["group_tables"].get("weekday_pct_diff_kpis", pd.DataFrame())
+        chart_df = weekday_kpis[weekday_kpis["group"].isin(selected_groups)].copy()
+        if not chart_df.empty:
+            chart_df["group"] = chart_df["group"].map(_group_label)
+            weekday_charts = [
+                ("Avg Store Absorption Rate % Diff by Weekday", "avg_store_absorption_rate_pct_diff"),
+                ("Cal Store Conversion Rate % Diff by Weekday", "cal_store_conversion_rate_pct_diff"),
+                ("Total Orders % Diff by Weekday", "total_orders_pct_diff"),
+                ("AOV % Diff by Weekday", "AOV_pct_diff"),
+                ("Total Quantity % Diff by Weekday", "total_quantity_pct_diff"),
+                ("Price per Item % Diff by Weekday", "price_per_item_pct_diff"),
+                ("Total Revenue % Diff by Weekday", "total_revenue_pct_diff"),
+                ("Total PC1 % Diff by Weekday", "total_PC1_pct_diff"),
+                ("Margin % Diff by Weekday", "margin_pct_diff"),
+                ("RP Revenue Share % Diff by Weekday", "RP_revenue_share_pct_diff"),
+                ("Promo Revenue Share % Diff by Weekday", "promo_revenue_share_pct_diff"),
+            ]
 
-        for title, kpi_col in weekday_charts:
-            st.altair_chart(
-                build_weekday_chart(chart_df=chart_df, kpi_col=kpi_col, title=title),
-                width='stretch',
-            )
+            for title, kpi_col in weekday_charts:
+                st.altair_chart(
+                    build_weekday_chart(chart_df=chart_df, kpi_col=kpi_col, title=title),
+                    width='stretch',
+                )
+
 
 if st.session_state.get("category_group_tables"):
     st.subheader("Deep Dive： Store Level Selected Categories Analysis")
@@ -672,6 +677,64 @@ if st.session_state.get("category_group_tables"):
         st.altair_chart(
             build_selected_categories_waterfall_chart(
                 category_testing_waterfall,
+                f"{_group_label(selected_testing_group)}",
+            ),
+            width='stretch',
+        )
+
+        category_control_promo_split_waterfall = build_selected_categories_promo_non_promo_waterfall_table(
+        group_df=st.session_state["category_group_tables"].get(selected_control_group, pd.DataFrame()),
+        baseline_dates=baseline_dates,
+        promo_dates=promo_dates,
+    )
+    category_testing_promo_split_waterfall = build_selected_categories_promo_non_promo_waterfall_table(
+        group_df=st.session_state["category_group_tables"].get(selected_testing_group, pd.DataFrame()),
+        baseline_dates=baseline_dates,
+        promo_dates=promo_dates,
+    )
+    st.markdown("**Waterfall - Promo vs Non Promo Revenue Bridge**")
+    promo_split_control_col, _, promo_split_testing_col = st.columns([3, 1, 3])
+    with promo_split_control_col:
+        st.altair_chart(
+            build_selected_categories_waterfall_chart(
+                category_control_promo_split_waterfall,
+                f"{_group_label(selected_control_group)}",
+            ),
+            width='stretch',
+        )
+    with promo_split_testing_col:
+        st.altair_chart(
+            build_selected_categories_waterfall_chart(
+                category_testing_promo_split_waterfall,
+                f"{_group_label(selected_testing_group)}",
+            ),
+            width='stretch',
+        )
+
+    category_control_existing_split_waterfall = build_selected_categories_existing_non_existing_waterfall_table(
+        group_df=st.session_state["category_group_tables"].get(selected_control_group, pd.DataFrame()),
+        baseline_dates=baseline_dates,
+        promo_dates=promo_dates,
+    )
+    category_testing_existing_split_waterfall = build_selected_categories_existing_non_existing_waterfall_table(
+        group_df=st.session_state["category_group_tables"].get(selected_testing_group, pd.DataFrame()),
+        baseline_dates=baseline_dates,
+        promo_dates=promo_dates,
+    )
+    st.markdown("**Waterfall - Existing Insider vs New+Non Insider Revenue Bridge**")
+    existing_split_control_col, _, existing_split_testing_col = st.columns([3, 1, 3])
+    with existing_split_control_col:
+        st.altair_chart(
+            build_selected_categories_waterfall_chart(
+                category_control_existing_split_waterfall,
+                f"{_group_label(selected_control_group)}",
+            ),
+            width='stretch',
+        )
+    with existing_split_testing_col:
+        st.altair_chart(
+            build_selected_categories_waterfall_chart(
+                category_testing_existing_split_waterfall,
                 f"{_group_label(selected_testing_group)}",
             ),
             width='stretch',
