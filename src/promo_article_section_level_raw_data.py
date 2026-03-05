@@ -128,6 +128,7 @@ def build_selected_categories_funnel_table(
     group_df: pd.DataFrame,
     baseline_dates: list[date],
     promo_dates: list[date],
+    vat: float,
 ) -> pd.DataFrame:
 
     if group_df.empty:
@@ -148,7 +149,7 @@ def build_selected_categories_funnel_table(
             "price per item (selected categories)": total_revenue / total_quantity if total_quantity else float("nan"),
             "total revenue (selected categories)": total_revenue,
             "total PC1 (selected categories)": total_pc1,
-            "margin (selected categories)": total_pc1 / total_revenue if total_revenue else float("nan"),
+            "margin (selected categories)": round((total_pc1 / total_revenue) * vat, 4) if total_revenue else float("nan"),
         }
 
     baseline_metrics = _metrics(baseline_df)

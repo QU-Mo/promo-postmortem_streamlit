@@ -398,7 +398,7 @@ if st.sidebar.button("Run"):
         st.error(f"Error running query: {e}")
 
 if st.session_state.get("group_tables"):
-    st.subheader("Store Level - Funnel Analysis (Exclude Sunday)")
+    
     group_store_map = {
     "Control Group 1": control_group_1,
     "Control Group 2": control_group_2,
@@ -440,6 +440,7 @@ if st.session_state.get("group_tables") or st.session_state.get("category_group_
         )
 
 if st.session_state.get("group_tables"):
+    st.subheader("Store Level (All Categories) - Funnel Analysis (Exclude Sunday)")
     funnel_tables = st.session_state["group_tables"].get("funnel_tables", {})
 
     selected_groups = [selected_control_group, selected_testing_group]
@@ -455,7 +456,7 @@ if st.session_state.get("group_tables"):
         testing_codes = group_store_map.get(selected_testing_group, [])
         st.markdown(f"**{_group_label(selected_testing_group)}**")
         st.caption(f"Selected store code(s): {', '.join(testing_codes) if testing_codes else 'None'}")
-        st.dataframe(format_funnel_table(control_df), width='stretch')
+        st.dataframe(format_funnel_table(testing_df), width='stretch')
 
     promo_impact_df = build_promo_impact_table(
         funnel_tables=funnel_tables,
@@ -466,7 +467,7 @@ if st.session_state.get("group_tables"):
     st.caption(
         "Promo Impact includes % Diff and Abs Diff comparisons between testing and control groups."
     )
-    st.dataframe(format_funnel_table(control_df), width='stretch')
+    st.dataframe(format_promo_impact_table(promo_impact_df), width='stretch')
 
     weekday_kpis = st.session_state["group_tables"].get("weekday_pct_diff_kpis", pd.DataFrame())
     chart_df = weekday_kpis[weekday_kpis["group"].isin(selected_groups)].copy()
@@ -486,27 +487,25 @@ if st.session_state.get("group_tables"):
             ("Promo Revenue Share % Diff by Weekday", "promo_revenue_share_pct_diff"),
         ]
 
-        for i in range(0, len(weekday_charts), 2):
-            row_cols = st.columns(2)
-            for col_idx, chart_config in enumerate(weekday_charts[i : i + 2]):
-                title, kpi_col = chart_config
-                with row_cols[col_idx]:
-                    st.altair_chart(
-                        build_weekday_chart(chart_df=chart_df, kpi_col=kpi_col, title=title),
-                        width='stretch',
-                    )
+        for title, kpi_col in weekday_charts:
+            st.altair_chart(
+                build_weekday_chart(chart_df=chart_df, kpi_col=kpi_col, title=title),
+                width='stretch',
+            )
 
 if st.session_state.get("category_group_tables"):
-    st.subheader("Store Level -Selected Categories Analysis")
+    st.subheader("Deep Dive： Store Level Selected Categories Analysis")
     category_control_table = build_selected_categories_funnel_table(
         group_df=st.session_state["category_group_tables"].get(selected_control_group, pd.DataFrame()),
         baseline_dates=baseline_dates,
         promo_dates=promo_dates,
+        vat=vat,
     )
     category_testing_table = build_selected_categories_funnel_table(
         group_df=st.session_state["category_group_tables"].get(selected_testing_group, pd.DataFrame()),
         baseline_dates=baseline_dates,
         promo_dates=promo_dates,
+        vat=vat,
     )
 
     category_funnel_tables = {
