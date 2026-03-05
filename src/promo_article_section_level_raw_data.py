@@ -1,5 +1,6 @@
 from datetime import date
 from google.cloud import bigquery
+import pandas as pd
 
 
 def build_promo_article_section_level_raw_data_sql(
@@ -120,6 +121,62 @@ def fetch_promo_article_section_level_raw_data(
     job_config = bigquery.QueryJobConfig(query_parameters=params)
     query_job = bq_client.query(sql, job_config=job_config)
     return query_job.to_dataframe()
+
+
+
+def build_selected_categories_funnel_table(
+    group_df: pd.DataFrame,
+    baseline_dates: list[date],
+    promo_dates: list[date],
+) -> pd.DataFrame:
+
+    if group_df.empty:
+        return pd.DataFrame()
+
+    working_df = group_df.copy()
+    working_df["ordered_date"] = pd.to_datetime(working_df["ordered_date"]).dt.date
+
+    baseline_df = working_df[working_df["ordered_date"].isin(baseline_dates)]
+    promo_df = working_df[working_df["ordered_date"].isin(promo_dates)]
+
+    def _metrics(df: pd.DataFrame) -> dict[str, float]:
+        total_quantity = pd.to_numeric(df["total_quantity"], errors="coerce").sum(min_count=1)
+        total_revenue = pd.to_numeric(df["total_revenue"], errors="coerce").sum(min_count=1)
+        total_pc1 = pd.to_numeric(df["total_PC1"], errors="coerce").sum(min_count=1)
+        return {
+            "total quantity (selected categories)": total_quantity,
+            "price per item (selected categories)": total_revenue / total_quantity if total_quantity else float("nan"),
+            "total revenue (selected categories)": total_revenue,
+            "total PC1 (selected categories)": total_pc1,
+            "margin (selected categories)": total_pc1 / total_revenue if total_revenue else float("nan"),
+        }
+
+    baseline_metrics = _metrics(baseline_df)
+    promo_metrics = _metrics(promo_df)
+
+    rows = []
+    for kpi in [
+        "total quantity (selected categories)",
+        "price per item (selected categories)",
+        "total revenue (selected categories)",
+        "total PC1 (selected categories)",
+        "margin (selected categories)",
+    ]:
+        baseline_value = baseline_metrics.get(kpi, float("nan"))
+        promo_value = promo_metrics.get(kpi, float("nan"))
+        abs_diff = promo_value - baseline_value
+        pct_diff = abs_diff / baseline_value if pd.notna(baseline_value) and baseline_value != 0 else float("nan")
+        rows.append(
+            {
+                "KPI": kpi,
+                "Baseline Period": baseline_value,
+                "Promo Period": promo_value,
+                "Abs Diff (Promo - Baseline)": abs_diff,
+                "% Diff (Promo vs Baseline)": pct_diff,
+            }
+        )
+    return pd.DataFrame(rows)
+
 
 
 

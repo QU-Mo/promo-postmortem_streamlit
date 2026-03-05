@@ -10,7 +10,10 @@ from store_level_raw_data import (
     fetch_raw_data,
     fetch_store_code_options,
 )
-from promo_article_section_level_raw_data import fetch_promo_article_section_level_raw_data
+from promo_article_section_level_raw_data import (
+    build_selected_categories_funnel_table,
+    fetch_promo_article_section_level_raw_data,
+)
 
 
 st.set_page_config(page_title="Promo Post-Mortem", layout="wide")
@@ -397,21 +400,27 @@ if st.sidebar.button("Run"):
 if st.session_state.get("group_tables"):
     st.subheader("Store Level - Funnel Analysis (Exclude Sunday)")
     group_store_map = {
-        "Control Group 1": control_group_1,
-        "Control Group 2": control_group_2,
-        "Testing Group 1": testing_group_1,
-        "Testing Group 2": testing_group_2,
-    }
-    group_description_map = {
-        "Control Group 1": control_group_1_note,
-        "Control Group 2": control_group_2_note,
-        "Testing Group 1": testing_group_1_note,
-        "Testing Group 2": testing_group_2_note,
-    }
+    "Control Group 1": control_group_1,
+    "Control Group 2": control_group_2,
+    "Testing Group 1": testing_group_1,
+    "Testing Group 2": testing_group_2,
+}
+group_description_map = {
+    "Control Group 1": control_group_1_note,
+    "Control Group 2": control_group_2_note,
+    "Testing Group 1": testing_group_1_note,
+    "Testing Group 2": testing_group_2_note,
+}
 
-    def _group_label(group_name: str) -> str:
-        desc = group_description_map.get(group_name, "").strip()
-        return f"{group_name} ({desc})" if desc else group_name
+
+def _group_label(group_name: str) -> str:
+    desc = group_description_map.get(group_name, "").strip()
+    return f"{group_name} ({desc})" if desc else group_name
+
+
+selected_control_group = "Control Group 1"
+selected_testing_group = "Testing Group 1"
+if st.session_state.get("group_tables") or st.session_state.get("category_group_tables"):
 
     funnel_tables = st.session_state["group_tables"].get("funnel_tables", {})
     control_col, vs_col, testing_col = st.columns([3, 1, 3])
@@ -429,6 +438,9 @@ if st.session_state.get("group_tables"):
             options=["Testing Group 1", "Testing Group 2"],
             index=0,
         )
+
+if st.session_state.get("group_tables"):
+    funnel_tables = st.session_state["group_tables"].get("funnel_tables", {})
 
     selected_groups = [selected_control_group, selected_testing_group]
     control_table_col, _, testing_table_col = st.columns([3, 1, 3])
@@ -486,10 +498,36 @@ if st.session_state.get("group_tables"):
 
 if st.session_state.get("category_group_tables"):
     st.subheader("Store Level -Selected Categories Analysis")
-    for group_name in ["Control Group 1", "Control Group 2", "Testing Group 1", "Testing Group 2"]:
-        group_df = st.session_state["category_group_tables"].get(group_name, pd.DataFrame())
-        st.markdown(f"**{group_name}**")
-        st.dataframe(group_df, use_container_width=True)
+    category_control_table = build_selected_categories_funnel_table(
+        group_df=st.session_state["category_group_tables"].get(selected_control_group, pd.DataFrame()),
+        baseline_dates=baseline_dates,
+        promo_dates=promo_dates,
+    )
+    category_testing_table = build_selected_categories_funnel_table(
+        group_df=st.session_state["category_group_tables"].get(selected_testing_group, pd.DataFrame()),
+        baseline_dates=baseline_dates,
+        promo_dates=promo_dates,
+    )
+
+    category_funnel_tables = {
+        selected_control_group: category_control_table,
+        selected_testing_group: category_testing_table,
+    }
+    category_control_col, _, category_testing_col = st.columns([3, 1, 3])
+    with category_control_col:
+        st.markdown(f"**{_group_label(selected_control_group)}**")
+        st.dataframe(format_funnel_table(category_control_table), use_container_width=True)
+    with category_testing_col:
+        st.markdown(f"**{_group_label(selected_testing_group)}**")
+        st.dataframe(format_funnel_table(category_testing_table), use_container_width=True)
+
+    category_promo_impact = build_promo_impact_table(
+        funnel_tables=category_funnel_tables,
+        selected_control_group=selected_control_group,
+        selected_testing_group=selected_testing_group,
+    )
+    st.markdown("**Promo Impact**")
+    st.dataframe(format_promo_impact_table(category_promo_impact), use_container_width=True)
 
 if st.session_state.get("data") is not None:
     st.download_button(
