@@ -299,7 +299,7 @@ def build_group_period_tables(
     def _safe_div(numerator: float, denominator: float) -> float:
         return float(numerator) / float(denominator) if denominator else 0.0
 
-    def _period_metrics(subset_df: pd.DataFrame) -> dict[str, float]:
+    def _period_metrics(subset_df: pd.DataFrame, include_sunday: bool = False) -> dict[str, float]:
         if subset_df.empty:
             return {
                 "pedestrian_footfall": 0.0,
@@ -318,9 +318,9 @@ def build_group_period_tables(
                 "promo_revenue_share": 0.0,
             }
 
-        filtered_df = subset_df[subset_df["weekday"] != "Sunday"].copy()
+        filtered_df = subset_df.copy() if include_sunday else subset_df[subset_df["weekday"] != "Sunday"].copy()
         if filtered_df.empty:
-            return _period_metrics(pd.DataFrame(columns=subset_df.columns))
+            return _period_metrics(pd.DataFrame(columns=subset_df.columns), include_sunday=include_sunday)
 
         total_orders = filtered_df["orders"].fillna(0).sum()
         incoming_visitors = filtered_df["incoming_visitors"].fillna(0).sum()
@@ -412,27 +412,10 @@ def build_group_period_tables(
             )
 
         weekday_order = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-        filtered_df = subset_df[subset_df["weekday"] != "Sunday"].copy()
-        if filtered_df.empty:
-            return pd.DataFrame(
-                columns=[
-                    "weekday",
-                    "avg_store_absorption_rate",
-                    "cal_store_conversion_rate",
-                    "total_orders",
-                    "AOV",
-                    "total_quantity",
-                    "price_per_item",
-                    "total_revenue",
-                    "total_PC1",
-                    "margin",
-                    "RP_revenue_share",
-                    "promo_revenue_share",
-                ]
-            )
+        
 
         weekday_frames = []
-        for weekday, weekday_df in filtered_df.groupby("weekday", dropna=False):
+        for weekday, weekday_df in subset_df.groupby("weekday", dropna=False):
             total_orders = weekday_df["orders"].fillna(0).sum()
             incoming_visitors = weekday_df["incoming_visitors"].fillna(0).sum()
             footfall_valid_weekday_df = weekday_df[weekday_df["pedestrian_footfall"] > 0].copy()
@@ -483,32 +466,45 @@ def build_group_period_tables(
 
     subset_tables: dict[str, pd.DataFrame] = {}
     funnel_tables: dict[str, pd.DataFrame] = {}
+    funnel_tables_include_sunday: dict[str, pd.DataFrame] = {}
     period_metrics: dict[str, dict[str, dict[str, float]]] = {}
+    period_metrics_include_sunday: dict[str, dict[str, dict[str, float]]] = {}
     weekday_kpi_frames: list[pd.DataFrame] = []
     weekday_pct_diff_frames: list[pd.DataFrame] = []
 
     for group_name, stores in group_config.items():
         metrics_by_period: dict[str, dict[str, float]] = {}
+        metrics_by_period_include_sunday: dict[str, dict[str, float]] = {}
         promo_subset = pd.DataFrame(columns=df.columns)
         for period_name, period_dates in period_config.items():
             table_name = f"{group_name} - {period_name}"
             period_subset = _subset(stores, period_dates)
             subset_tables[table_name] = period_subset
-            metrics_by_period[period_name] = _period_metrics(period_subset)
+            metrics_by_period[period_name] = _period_metrics(period_subset, include_sunday=False)
+            metrics_by_period_include_sunday[period_name] = _period_metrics(period_subset, include_sunday=True)
             if period_name == "Promo Period":
                 promo_subset = period_subset
 
         period_metrics[group_name] = metrics_by_period
+        period_metrics_include_sunday[group_name] = metrics_by_period_include_sunday
         funnel_tables[group_name] = _funnel_table(
             baseline_metrics=metrics_by_period["Baseline Period"],
             promo_metrics=metrics_by_period["Promo Period"],
         )
+        funnel_tables_include_sunday[group_name] = _funnel_table(
+            baseline_metrics=metrics_by_period_include_sunday["Baseline Period"],
+            promo_metrics=metrics_by_period_include_sunday["Promo Period"],
+        )
         promo_weekday_kpis = _weekday_kpi_table(promo_subset)
         promo_weekday_kpis["group"] = group_name
-        weekday_kpi_frames.append(promo_weekday_kpis)
+        promo_weekday_kpis["period"] = "Promo Period"
 
         baseline_subset = subset_tables.get(f"{group_name} - Baseline Period", pd.DataFrame(columns=df.columns))
         baseline_weekday_kpis = _weekday_kpi_table(baseline_subset)
+        baseline_weekday_kpis["group"] = group_name
+        baseline_weekday_kpis["period"] = "Baseline Period"
+
+        weekday_kpi_frames.extend([baseline_weekday_kpis, promo_weekday_kpis])
 
         weekday_comparison_df = promo_weekday_kpis.merge(
             baseline_weekday_kpis,
@@ -516,6 +512,7 @@ def build_group_period_tables(
             how="left",
             suffixes=("_promo", "_baseline"),
         )
+        weekday_comparison_df["group"] = group_name
 
         metric_cols = [
             "avg_store_absorption_rate",
@@ -569,7 +566,9 @@ def build_group_period_tables(
     return {
         "subset_tables": subset_tables,
         "funnel_tables": funnel_tables,
+        "funnel_tables_include_sunday": funnel_tables_include_sunday,
         "period_metrics": period_metrics,
+        "period_metrics_include_sunday": period_metrics_include_sunday,
         "weekday_kpis": weekday_kpis,
         "weekday_pct_diff_kpis": weekday_pct_diff_kpis,
     }

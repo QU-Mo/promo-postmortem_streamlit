@@ -250,10 +250,7 @@ def build_store_level_export_payload(group_tables: dict[str, pd.DataFrame]) -> b
         group_name, _, period_name = table_name.partition(" - ")
         export_df = subset_df.copy()
         export_df["ordered_date"] = pd.to_datetime(export_df["ordered_date"])
-        export_df["weekday"] = export_df["ordered_date"].dt.day_name()
-        export_df = export_df[export_df["weekday"] != "Sunday"].copy()
-        if export_df.empty:
-            continue
+        
 
         export_df["group"] = group_name
         export_df["period"] = period_name
@@ -281,7 +278,7 @@ def build_weekday_chart(
     y_axis_format = ".0%"
 
     base = alt.Chart(chart_df).encode(
-        x=alt.X("weekday:N", sort=["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"], axis=alt.Axis(labelAngle=0, title=None)),
+        x=alt.X("weekday:N", sort=["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], axis=alt.Axis(labelAngle=0, title=None)),
         y=alt.Y(f"{kpi_col}:Q", axis=alt.Axis(format=y_axis_format, title=None)),
         color=alt.Color(
             "group:N",
@@ -313,6 +310,52 @@ def build_weekday_chart(
         title=None,
     )
 
+
+
+def build_weekday_kpi_trend_chart(
+    chart_df: pd.DataFrame,
+    kpi_col: str,
+    title: str,
+) -> alt.Chart:
+    chart_df = chart_df.copy()
+    chart_df[kpi_col] = pd.to_numeric(chart_df[kpi_col], errors="coerce")
+
+    is_rate_metric = any(keyword in kpi_col.lower() for keyword in ["rate", "share", "margin"])
+    y_axis_format = ".0%" if is_rate_metric else ",.0f"
+    text_format = ".2%" if is_rate_metric else ",.0f"
+
+    base = alt.Chart(chart_df).encode(
+        x=alt.X(
+            "weekday:N",
+            sort=["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
+            axis=alt.Axis(labelAngle=0, title=None),
+        ),
+        y=alt.Y(f"{kpi_col}:Q", axis=alt.Axis(format=y_axis_format, title=None)),
+        color=alt.Color(
+            "series:N",
+            legend=alt.Legend(
+                orient="bottom",
+                direction="horizontal",
+                title=None,
+                labelLimit=500,
+                columns=1,
+            ),
+        ),
+    )
+
+    line = base.mark_line(point=True)
+    labels = base.mark_text(dy=-10, fontSize=12, fontWeight="bold").encode(
+        text=alt.Text(f"{kpi_col}:Q", format=text_format)
+    )
+
+    return (line + labels).properties(
+        title=alt.TitleParams(text=title, anchor="middle"),
+        height=300,
+    ).configure_legend(
+        orient="bottom",
+        direction="horizontal",
+        title=None,
+    )
 
 def build_selected_categories_waterfall_chart(
     waterfall_df: pd.DataFrame,
@@ -686,15 +729,25 @@ if st.session_state.get("group_tables") or st.session_state.get("category_group_
         st.caption(f"Promo period: {format_date_list(promo_dates)}")
 
 if st.session_state.get("group_tables"):
-    st.subheader("Store Level (All Categories) - Funnel Analysis (Exclude Sunday)")
+    include_sunday_funnel_toggle = st.toggle(
+        "Store Level Funnel Tables - include Sunday",
+        value=False,
+    )
+    section_title = (
+        "Store Level (All Categories) - Funnel Analysis (Include Sunday)"
+        if include_sunday_funnel_toggle
+        else "Store Level (All Categories) - Funnel Analysis (Exclude Sunday)"
+    )
+    st.subheader(section_title)
     if st.session_state.get("group_tables"):
         st.download_button(
-            "Download Raw Data (CSV): Store Level (All Categories) - Funnel Analysis (Exclude Sunday)",
+            "Download Raw Data (CSV): Store Level (All Categories) - Funnel Analysis",
             data=build_store_level_export_payload(st.session_state["group_tables"]),
-            file_name="store_level_all_categories_exclude_sunday.csv",
+            file_name="store_level_all_categories.csv",
             mime="text/csv",
         )
-    funnel_tables = st.session_state["group_tables"].get("funnel_tables", {})
+    funnel_table_key = "funnel_tables_include_sunday" if include_sunday_funnel_toggle else "funnel_tables"
+    funnel_tables = st.session_state["group_tables"].get(funnel_table_key, {})
     
 
     selected_groups = [selected_control_group, selected_testing_group]
@@ -744,27 +797,76 @@ if st.session_state.get("group_tables"):
     )
 
     if show_all_funnel_kpi_charts:
-        weekday_kpis = st.session_state["group_tables"].get("weekday_pct_diff_kpis", pd.DataFrame())
-        chart_df = weekday_kpis[weekday_kpis["group"].isin(selected_groups)].copy()
-        if not chart_df.empty:
-            chart_df["group"] = chart_df["group"].map(_group_label)
-            weekday_charts = [
-                ("Avg Store Absorption Rate % Diff by Weekday", "avg_store_absorption_rate_pct_diff"),
-                ("Cal Store Conversion Rate % Diff by Weekday", "cal_store_conversion_rate_pct_diff"),
-                ("Total Orders % Diff by Weekday", "total_orders_pct_diff"),
-                ("AOV % Diff by Weekday", "AOV_pct_diff"),
-                ("Total Quantity % Diff by Weekday", "total_quantity_pct_diff"),
-                ("Price per Item % Diff by Weekday", "price_per_item_pct_diff"),
-                ("Total Revenue % Diff by Weekday", "total_revenue_pct_diff"),
-                ("Total PC1 % Diff by Weekday", "total_PC1_pct_diff"),
-                ("Margin % Diff by Weekday", "margin_pct_diff"),
-                ("RP Revenue Share % Diff by Weekday", "RP_revenue_share_pct_diff"),
-                ("Promo Revenue Share % Diff by Weekday", "promo_revenue_share_pct_diff"),
-            ]
+        weekday_pct_kpis = st.session_state["group_tables"].get("weekday_pct_diff_kpis", pd.DataFrame())
+        weekday_kpis = st.session_state["group_tables"].get("weekday_kpis", pd.DataFrame())
+        pct_chart_df = weekday_pct_kpis[weekday_pct_kpis["group"].isin(selected_groups)].copy()
+        line_chart_df = weekday_kpis[weekday_kpis["group"].isin(selected_groups)].copy()
 
-            for title, kpi_col in weekday_charts:
+        if not pct_chart_df.empty:
+            pct_chart_df["group"] = pct_chart_df["group"].map(_group_label)
+        if not line_chart_df.empty:
+            line_chart_df["group"] = line_chart_df["group"].map(_group_label)
+            line_chart_df["series"] = line_chart_df["group"] + " - " + line_chart_df["period"]
+
+        weekday_charts = [
+            (
+                "Avg Store Absorption Rate % Diff by Weekday",
+                "avg_store_absorption_rate_pct_diff",
+                "avg_store_absorption_rate",
+                "Avg Store Absorption Rate by Weekday (Baseline vs Promo)",
+            ),
+            (
+                "Cal Store Conversion Rate % Diff by Weekday",
+                "cal_store_conversion_rate_pct_diff",
+                "cal_store_conversion_rate",
+                "Cal Store Conversion Rate by Weekday (Baseline vs Promo)",
+            ),
+            ("Total Orders % Diff by Weekday", "total_orders_pct_diff", "total_orders", "Total Orders by Weekday (Baseline vs Promo)"),
+            ("AOV % Diff by Weekday", "AOV_pct_diff", "AOV", "AOV by Weekday (Baseline vs Promo)"),
+            (
+                "Total Quantity % Diff by Weekday",
+                "total_quantity_pct_diff",
+                "total_quantity",
+                "Total Quantity by Weekday (Baseline vs Promo)",
+            ),
+            (
+                "Price per Item % Diff by Weekday",
+                "price_per_item_pct_diff",
+                "price_per_item",
+                "Price per Item by Weekday (Baseline vs Promo)",
+            ),
+            (
+                "Total Revenue % Diff by Weekday",
+                "total_revenue_pct_diff",
+                "total_revenue",
+                "Total Revenue by Weekday (Baseline vs Promo)",
+            ),
+            ("Total PC1 % Diff by Weekday", "total_PC1_pct_diff", "total_PC1", "Total PC1 by Weekday (Baseline vs Promo)"),
+            ("Margin % Diff by Weekday", "margin_pct_diff", "margin", "Margin by Weekday (Baseline vs Promo)"),
+            (
+                "RP Revenue Share % Diff by Weekday",
+                "RP_revenue_share_pct_diff",
+                "RP_revenue_share",
+                "RP Revenue Share by Weekday (Baseline vs Promo)",
+            ),
+            (
+                "Promo Revenue Share % Diff by Weekday",
+                "promo_revenue_share_pct_diff",
+                "promo_revenue_share",
+                "Promo Revenue Share by Weekday (Baseline vs Promo)",
+            ),
+        ]
+
+        for bar_title, bar_kpi_col, line_kpi_col, line_title in weekday_charts:
+            if not pct_chart_df.empty:
                 st.altair_chart(
-                    build_weekday_chart(chart_df=chart_df, kpi_col=kpi_col, title=title),
+                    build_weekday_chart(chart_df=pct_chart_df, kpi_col=bar_kpi_col, title=bar_title),
+                    width='stretch',
+                )
+
+            if not line_chart_df.empty:
+                st.altair_chart(
+                    build_weekday_kpi_trend_chart(chart_df=line_chart_df, kpi_col=line_kpi_col, title=line_title),
                     width='stretch',
                 )
 
