@@ -36,9 +36,9 @@ def build_promo_article_section_level_raw_data_sql(
       CASE WHEN article_price_red_eur IS NOT NULL THEN 'RP' ELSE 'BP' END AS price_type,
       CASE WHEN has_promotion THEN 'promo' ELSE 'non-promo' END AS promo_check,
       
-     ROUND(COALESCE(SUM(revenue_after_cancellations_and_returns_eur_incl_forecast), 0), 2)) AS total_revenue,
-     ROUND(COALESCE(SUM(quantity_ordered_after_cancellations_and_returns_incl_forecast), 0), 2)) AS total_quantity,
-    ROUND(COALESCE(SUM(profit_contribution_1_eur_incl_forecast), 0), 2)) AS total_PC1
+     ROUND(COALESCE(SUM(revenue_after_cancellations_and_returns_eur_incl_forecast), 0), 2) AS total_revenue,
+     ROUND(COALESCE(SUM(quantity_ordered_after_cancellations_and_returns_incl_forecast), 0), 2) AS total_quantity,
+    ROUND(COALESCE(SUM(profit_contribution_1_eur_incl_forecast), 0), 2) AS total_PC1
     FROM `{order_table}` AS mco
     LEFT JOIN UNNEST(order_items) AS oi
     WHERE channel = @order_channel
