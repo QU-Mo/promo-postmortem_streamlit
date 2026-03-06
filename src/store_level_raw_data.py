@@ -11,6 +11,8 @@ def build_raw_data_sql(
     order_channel: str,
     order_country: str,
     selected_dates: list[date],
+    baseline_dates: list[date],
+    baseline_coefficient: float = 1.0,
     traffic_table: str = "puc-p-dataf-retmkt-npii.reports.hystreet_instore_by_day_by_store",
     order_table: str = "puc-p-dataf-retmkt-pii.datamarts.multichannel_orders",
 ) -> tuple[str, list]:
@@ -78,7 +80,26 @@ def build_raw_data_sql(
         AND traffic_date.store_code = store_level_mco_data.store_code
         AND traffic_date.store_name = store_level_mco_data.store_name
     )
-    SELECT *
+    SELECT
+      ordered_date,
+      country,
+      business_unit,
+      store_code,
+      store_name,
+      IF(ordered_date IN UNNEST(@baseline_dates), pedestrian_footfall * @baseline_coefficient, pedestrian_footfall) AS pedestrian_footfall,
+      store_absorption_rate,
+      store_conversion_rate,
+      IF(ordered_date IN UNNEST(@baseline_dates), incoming_visitors * @baseline_coefficient, incoming_visitors) AS incoming_visitors,
+      IF(ordered_date IN UNNEST(@baseline_dates), orders * @baseline_coefficient, orders) AS orders,
+      channel,
+      IF(ordered_date IN UNNEST(@baseline_dates), total_revenue * @baseline_coefficient, total_revenue) AS total_revenue,
+      IF(ordered_date IN UNNEST(@baseline_dates), total_RP_revenue * @baseline_coefficient, total_RP_revenue) AS total_RP_revenue,
+      IF(ordered_date IN UNNEST(@baseline_dates), total_promo_revenue * @baseline_coefficient, total_promo_revenue) AS total_promo_revenue,
+      IF(ordered_date IN UNNEST(@baseline_dates), total_quantity * @baseline_coefficient, total_quantity) AS total_quantity,
+      IF(ordered_date IN UNNEST(@baseline_dates), total_RP_quantity * @baseline_coefficient, total_RP_quantity) AS total_RP_quantity,
+      IF(ordered_date IN UNNEST(@baseline_dates), total_promo_quantity * @baseline_coefficient, total_promo_quantity) AS total_promo_quantity,
+      IF(ordered_date IN UNNEST(@baseline_dates), total_PC1 * @baseline_coefficient, total_PC1) AS total_PC1,
+      IF(ordered_date IN UNNEST(@baseline_dates), total_RP_PC1 * @baseline_coefficient, total_RP_PC1) AS total_RP_PC1
     FROM stationary_funnel_combi
     """
 
@@ -89,6 +110,8 @@ def build_raw_data_sql(
         bigquery.ScalarQueryParameter("order_company_name_short", "STRING", order_company_name_short),
         bigquery.ScalarQueryParameter("order_channel", "STRING", order_channel),
         bigquery.ScalarQueryParameter("order_country", "STRING", order_country),
+        bigquery.ScalarQueryParameter("baseline_coefficient", "FLOAT64", baseline_coefficient),
+        bigquery.ArrayQueryParameter("baseline_dates", "DATE", [str(d) for d in baseline_dates]),
         bigquery.ArrayQueryParameter("selected_dates", "DATE", normalized_dates),
     ]
     return sql, params
@@ -101,6 +124,8 @@ def fetch_raw_data(
     order_channel: str,
     order_country: str,
     selected_dates: list[date],
+    baseline_dates: list[date],
+    baseline_coefficient: float,
     bq_client: bigquery.Client,
     traffic_table: str = "puc-p-dataf-retmkt-npii.reports.hystreet_instore_by_day_by_store",
     order_table: str = "puc-p-dataf-retmkt-pii.datamarts.multichannel_orders",
@@ -112,6 +137,8 @@ def fetch_raw_data(
         order_channel=order_channel,
         order_country=order_country,
         selected_dates=selected_dates,
+        baseline_dates=baseline_dates,
+        baseline_coefficient=baseline_coefficient,
         traffic_table=traffic_table,
         order_table=order_table,
     )
@@ -190,10 +217,10 @@ def build_group_period_tables(
     df["weekday"] = pd.to_datetime(df["ordered_date"]).dt.day_name()
 
     group_config = {
-        "Control Group 1": control_group_1,
-        "Control Group 2": control_group_2,
-        "Testing Group 1": testing_group_1,
-        "Testing Group 2": testing_group_2,
+        "Group 1": control_group_1,
+        "Group 2": control_group_2,
+        "Group 3": testing_group_1,
+        "Group 4": testing_group_2,
     }
     period_config = {
         "Baseline Period": baseline_dates,
@@ -288,7 +315,11 @@ def build_group_period_tables(
 
         row_defs = [
             (
-                f"pedestrian footfall (footfall trackable stores #: {baseline_metrics['footfall_trackable_stores_count']} → {promo_metrics['footfall_trackable_stores_count']})",
+               (
+                    "pedestrian footfall\n"
+                    f"(trackable stores #: {baseline_metrics['footfall_trackable_stores_count']} -->"
+                    f"{promo_metrics['footfall_trackable_stores_count']})"
+                ),
                 "pedestrian_footfall",
             ),
             ("store absorption rate", "store_absorption_rate"),

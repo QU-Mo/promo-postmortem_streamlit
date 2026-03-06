@@ -8,6 +8,8 @@ def build_promo_article_section_level_raw_data_sql(
     order_channel: str,
     order_country: str,
     selected_dates: list[date],
+    baseline_dates: list[date],
+    baseline_coefficient: float = 1.0,
     order_table: str = "puc-p-dataf-retmkt-pii.datamarts.multichannel_orders",
     store_codes: list[str] | None = None,
     article_section_groups: list[str] | None = None,
@@ -32,9 +34,21 @@ def build_promo_article_section_level_raw_data_sql(
       insider_customer_type,
       CASE WHEN article_price_red_eur IS NOT NULL THEN 'RP' ELSE 'BP' END AS price_type,
       CASE WHEN has_promotion THEN 'promo' ELSE 'non-promo' END AS promo_check,
-      ROUND(COALESCE(SUM(revenue_after_cancellations_and_returns_eur_incl_forecast), 0), 2) AS total_revenue,
-      ROUND(COALESCE(SUM(quantity_ordered_after_cancellations_and_returns_incl_forecast), 0), 2) AS total_quantity,
-      ROUND(COALESCE(SUM(profit_contribution_1_eur_incl_forecast), 0), 2) AS total_PC1
+      IF(
+        EXTRACT(DATE FROM ordered_at) IN UNNEST(@baseline_dates),
+        ROUND(COALESCE(SUM(revenue_after_cancellations_and_returns_eur_incl_forecast), 0), 2) * @baseline_coefficient,
+        ROUND(COALESCE(SUM(revenue_after_cancellations_and_returns_eur_incl_forecast), 0), 2)
+      ) AS total_revenue,
+      IF(
+        EXTRACT(DATE FROM ordered_at) IN UNNEST(@baseline_dates),
+        ROUND(COALESCE(SUM(quantity_ordered_after_cancellations_and_returns_incl_forecast), 0), 2) * @baseline_coefficient,
+        ROUND(COALESCE(SUM(quantity_ordered_after_cancellations_and_returns_incl_forecast), 0), 2)
+      ) AS total_quantity,
+      IF(
+        EXTRACT(DATE FROM ordered_at) IN UNNEST(@baseline_dates),
+        ROUND(COALESCE(SUM(profit_contribution_1_eur_incl_forecast), 0), 2) * @baseline_coefficient,
+        ROUND(COALESCE(SUM(profit_contribution_1_eur_incl_forecast), 0), 2)
+      ) AS total_PC1
     FROM `{order_table}` AS mco
     LEFT JOIN UNNEST(order_items) AS oi
     WHERE channel = @order_channel
@@ -69,6 +83,8 @@ def build_promo_article_section_level_raw_data_sql(
         bigquery.ScalarQueryParameter("order_company_name_short", "STRING", order_company_name_short),
         bigquery.ScalarQueryParameter("order_channel", "STRING", order_channel),
         bigquery.ScalarQueryParameter("order_country", "STRING", order_country),
+        bigquery.ScalarQueryParameter("baseline_coefficient", "FLOAT64", baseline_coefficient),
+        bigquery.ArrayQueryParameter("baseline_dates", "DATE", [str(d) for d in baseline_dates]),
         bigquery.ArrayQueryParameter("selected_dates", "DATE", normalized_dates),
         bigquery.ArrayQueryParameter("store_codes", "STRING", store_codes),
         bigquery.ArrayQueryParameter("article_section_groups", "STRING", article_section_groups),
@@ -94,6 +110,8 @@ def fetch_promo_article_section_level_raw_data(
     order_channel: str,
     order_country: str,
     selected_dates: list[date],
+    baseline_dates: list[date],
+    baseline_coefficient: float,
     bq_client: bigquery.Client,
     order_table: str = "puc-p-dataf-retmkt-pii.datamarts.multichannel_orders",
     store_codes: list[str] | None = None,
@@ -109,6 +127,8 @@ def fetch_promo_article_section_level_raw_data(
         order_channel=order_channel,
         order_country=order_country,
         selected_dates=selected_dates,
+        baseline_dates=baseline_dates,
+        baseline_coefficient=baseline_coefficient,
         order_table=order_table,
         store_codes=store_codes,
         article_section_groups=article_section_groups,

@@ -371,6 +371,7 @@ order_company_name_short = st.sidebar.text_input("order_company_name_short", val
 order_channel = st.sidebar.text_input("order_channel", value="STATIONARY")
 order_country = st.sidebar.selectbox("order_country", options=["DE", "AT"])
 vat = st.sidebar.number_input("VAT", min_value=0.0, value=1.19, step=0.01, format="%.2f")
+baseline_coefficient = st.sidebar.number_input("baseline coefficient", min_value=0.0, value=1.0, step=0.01, format="%.2f")
 
 try:
     store_codes = get_store_codes(order_company_name_short, order_channel, order_country)
@@ -380,49 +381,49 @@ except Exception as error:
 
 store_options = build_store_options(store_codes)
 
-control_group_1_select_all = st.sidebar.checkbox("Select all stores - control group 1", value=True)
+control_group_1_select_all = st.sidebar.checkbox("Select all stores - group 1", value=True)
 if control_group_1_select_all:
     control_group_1 = store_options["control_group_1"]
 else:
     control_group_1 = st.sidebar.multiselect(
-        "control group1 (store code)",
+        "group 1 (store code)",
         options=store_options["control_group_1"],
         default=[],
     )
 
-control_group_2_select_all = st.sidebar.checkbox("Select all stores - control group 2", value=True)
+control_group_2_select_all = st.sidebar.checkbox("Select all stores - group 2", value=True)
 if control_group_2_select_all:
     control_group_2 = store_options["control_group_2"]
 else:
     control_group_2 = st.sidebar.multiselect(
-        "control group 2 (store code)",
+        "group 2 (store code)",
         options=store_options["control_group_2"],
         default=[],
     )
 
-testing_group_1_select_all = st.sidebar.checkbox("Select all stores - testing group 1", value=True)
+testing_group_1_select_all = st.sidebar.checkbox("Select all stores - group 3", value=True)
 if testing_group_1_select_all:
     testing_group_1 = store_options["testing_group_1"]
 else:
     testing_group_1 = st.sidebar.multiselect(
-        "testing group 1 (store code)",
+        "group 3 (store code)",
         options=store_options["testing_group_1"],
         default=[],
     )
-testing_group_2_select_all = st.sidebar.checkbox("Select all stores - testing group 2", value=True)
+testing_group_2_select_all = st.sidebar.checkbox("Select all stores - group 4", value=True)
 if testing_group_2_select_all:
     testing_group_2 = store_options["testing_group_2"]
 else:
     testing_group_2 = st.sidebar.multiselect(
-        "testing group 2(store code)",
+        "group 4 (store code)",
         options=store_options["testing_group_2"],
         default=[],
     )
 
-control_group_1_note = st.sidebar.text_input("Control Group 1 description", value="")
-control_group_2_note = st.sidebar.text_input("Control Group 2 description", value="")
-testing_group_1_note = st.sidebar.text_input("Testing Group 1 description", value="")
-testing_group_2_note = st.sidebar.text_input("Testing Group 2 description", value="")
+control_group_1_note = st.sidebar.text_input("Group 1 description", value="")
+control_group_2_note = st.sidebar.text_input("Group 2 description", value="")
+testing_group_1_note = st.sidebar.text_input("Group 3 description", value="")
+testing_group_2_note = st.sidebar.text_input("Group 4 description", value="")
 
 
 baseline_non_consecutive_toggle = st.sidebar.toggle(
@@ -539,6 +540,8 @@ if st.sidebar.button("Run"):
             order_channel=order_channel,
             order_country=order_country,
             selected_dates=selected_dates,
+            baseline_dates=baseline_dates,
+            baseline_coefficient=baseline_coefficient,
             bq_client=bq_client,
         )
         st.session_state["data"] = df
@@ -559,6 +562,8 @@ if st.sidebar.button("Run"):
             order_channel=order_channel,
             order_country=order_country,
             selected_dates=selected_dates,
+            baseline_dates=baseline_dates,
+            baseline_coefficient=baseline_coefficient,
             article_section_groups=article_section_groups,
             article_sections=article_sections,
             article_seasons=article_seasons,
@@ -568,11 +573,11 @@ if st.sidebar.button("Run"):
         category_df["store_code"] = category_df["store_code"].astype(str).str.zfill(4)
         st.session_state["category_data"] = category_df
         st.session_state["category_group_tables"] = {
-            "Control Group 1": category_df[category_df["store_code"].isin([str(c).zfill(4) for c in control_group_1])],
-            "Control Group 2": category_df[category_df["store_code"].isin([str(c).zfill(4) for c in control_group_2])],
-            "Testing Group 1": category_df[category_df["store_code"].isin([str(c).zfill(4) for c in testing_group_1])],
-            "Testing Group 2": category_df[category_df["store_code"].isin([str(c).zfill(4) for c in testing_group_2])],
-        }
+            "Group 1": category_df[category_df["store_code"].isin([str(c).zfill(4) for c in control_group_1])],
+            "Group 2": category_df[category_df["store_code"].isin([str(c).zfill(4) for c in control_group_2])],
+            "Group 3": category_df[category_df["store_code"].isin([str(c).zfill(4) for c in testing_group_1])],
+            "Group 4": category_df[category_df["store_code"].isin([str(c).zfill(4) for c in testing_group_2])],
+            }
     except Exception as e:
         st.session_state["data"] = None
         st.session_state["sql"] = None
@@ -584,16 +589,16 @@ if st.sidebar.button("Run"):
 
     
 group_store_map = {
-    "Control Group 1": control_group_1,
-    "Control Group 2": control_group_2,
-    "Testing Group 1": testing_group_1,
-    "Testing Group 2": testing_group_2,
+    "Group 1": control_group_1,
+    "Group 2": control_group_2,
+    "Group 3": testing_group_1,
+    "Group 4": testing_group_2,
 }
 group_description_map = {
-    "Control Group 1": control_group_1_note,
-    "Control Group 2": control_group_2_note,
-    "Testing Group 1": testing_group_1_note,
-    "Testing Group 2": testing_group_2_note,
+    "Group 1": control_group_1_note,
+    "Group 2": control_group_2_note,
+    "Group 3": testing_group_1_note,
+    "Group 4": testing_group_2_note,
 }
 
 
@@ -602,8 +607,8 @@ def _group_label(group_name: str) -> str:
     return f"{group_name} ({desc})" if desc else group_name
 
 
-selected_control_group = "Control Group 1"
-selected_testing_group = "Testing Group 1"
+selected_control_group = "Group 1"
+selected_testing_group = "Group 3"
 if st.session_state.get("group_tables") or st.session_state.get("category_group_tables"):
     st.markdown(
         """
@@ -628,14 +633,14 @@ if st.session_state.get("group_tables") or st.session_state.get("category_group_
     with control_col:
         selected_control_group = st.selectbox(
             "Analysis Group A",
-            options=["Control Group 1", "Control Group 2", "Testing Group 1", "Testing Group 2"],
+            options=["Group 1", "Group 2", "Group 3", "Group 4"],
             index=0,
         )
     
     with testing_col:
         selected_testing_group = st.selectbox(
             "Analysis Group B",
-            options=["Control Group 1", "Control Group 2", "Testing Group 1", "Testing Group 2"],
+            options=["Group 1", "Group 2", "Group 3", "Group 4"],
             index=2,
         )
 
