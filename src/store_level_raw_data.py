@@ -256,6 +256,9 @@ def build_group_period_tables(
 
         total_orders = filtered_df["orders"].fillna(0).sum()
         incoming_visitors = filtered_df["incoming_visitors"].fillna(0).sum()
+        footfall_valid_df = filtered_df[filtered_df["pedestrian_footfall"].notna()].copy()
+        incoming_visitors_with_footfall = footfall_valid_df["incoming_visitors"].fillna(0).sum()
+        pedestrian_footfall_with_footfall = footfall_valid_df["pedestrian_footfall"].fillna(0).sum()
         total_revenue = filtered_df["total_revenue"].fillna(0).sum()
         total_quantity = filtered_df["total_quantity"].fillna(0).sum()
         total_pc1 = filtered_df["total_PC1"].fillna(0).sum()
@@ -265,7 +268,7 @@ def build_group_period_tables(
         return {
             "pedestrian_footfall": filtered_df["pedestrian_footfall"].fillna(0).sum(),
             "footfall_trackable_stores_count": int(filtered_df.loc[filtered_df["pedestrian_footfall"].notna(), "store_code"].nunique()),
-            "store_absorption_rate": filtered_df["store_absorption_rate"].mean(),
+            "store_absorption_rate": _safe_div(incoming_visitors_with_footfall, pedestrian_footfall_with_footfall),
             "incoming_visitors": incoming_visitors,
             "cal_store_conversion_rate": _safe_div(total_orders, incoming_visitors),
             "total_orders": total_orders,
@@ -288,9 +291,9 @@ def build_group_period_tables(
                 f"pedestrian footfall (footfall trackable stores #: {baseline_metrics['footfall_trackable_stores_count']} → {promo_metrics['footfall_trackable_stores_count']})",
                 "pedestrian_footfall",
             ),
-            ("avg store absorption rate", "store_absorption_rate"),
+            ("store absorption rate", "store_absorption_rate"),
             ("incoming visitors", "incoming_visitors"),
-            ("cal store conversion rate", "cal_store_conversion_rate"),
+            ("store conversion rate", "cal_store_conversion_rate"),
             ("total orders", "total_orders"),
             ("AOV", "AOV"),
             ("total quantity", "total_quantity"),
@@ -360,6 +363,9 @@ def build_group_period_tables(
         for weekday, weekday_df in filtered_df.groupby("weekday", dropna=False):
             total_orders = weekday_df["orders"].fillna(0).sum()
             incoming_visitors = weekday_df["incoming_visitors"].fillna(0).sum()
+            footfall_valid_weekday_df = weekday_df[weekday_df["pedestrian_footfall"].notna()].copy()
+            incoming_visitors_with_footfall = footfall_valid_weekday_df["incoming_visitors"].fillna(0).sum()
+            pedestrian_footfall_with_footfall = footfall_valid_weekday_df["pedestrian_footfall"].fillna(0).sum()
             total_revenue = weekday_df["total_revenue"].fillna(0).sum()
             total_quantity = weekday_df["total_quantity"].fillna(0).sum()
             total_pc1 = weekday_df["total_PC1"].fillna(0).sum()
@@ -369,7 +375,7 @@ def build_group_period_tables(
             weekday_frames.append(
                 {
                     "weekday": weekday,
-                    "avg_store_absorption_rate": weekday_df["store_absorption_rate"].mean(),
+                    "avg_store_absorption_rate": _safe_div(incoming_visitors_with_footfall, pedestrian_footfall_with_footfall),
                     "cal_store_conversion_rate": _safe_div(total_orders, incoming_visitors),
                     "total_orders": total_orders,
                     "AOV": _safe_div(total_revenue, total_orders),

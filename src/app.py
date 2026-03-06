@@ -61,6 +61,8 @@ ALL_ARTICLE_SECTIONS = [
     "T-SHIRT-O. ARM", "TASCHE", "TECHNIK", "TRAVEL", "TUECHER", "TWINSET", "UHR", "WAESCHE", "WESTE", "UNKNOWN",
 ]
 
+ALL_PRICE_TYPES = ["RP", "BP"]
+
 def initialize_session_state() -> None:
     if "data" not in st.session_state:
         st.session_state["data"] = None
@@ -70,6 +72,8 @@ def initialize_session_state() -> None:
         st.session_state["group_tables"] = {}
     if "category_group_tables" not in st.session_state:
         st.session_state["category_group_tables"] = {}
+    if "category_data" not in st.session_state:
+        st.session_state["category_data"] = None
 
 
 def normalize_date_range(selected_range) -> list[date]:
@@ -163,11 +167,11 @@ def build_promo_impact_table(
             "control_abs_diff": f"{control_label} Abs Diff (Promo vs Baseline)",
         }
     )
-    merged["Promo Impact (Testing Group 1 %Diff - Control Group 1 %Diff )"] = (
+    merged["Promo Impact (Group A %Diff - Group B %Diff )"] = (
          merged[f"{testing_label} % Diff (Promo vs Baseline)"]
         - merged[f"{control_label} % Diff (Promo vs Baseline)"]
     )
-    merged["Promo Impact (Testing Group 1 Abs Diff - Control Group 1 Abs Diff )"] = (
+    merged["Promo Impact (Group A Abs Diff - Group B Abs Diff )"] = (
         merged[f"{testing_label} Abs Diff (Promo vs Baseline)"]
         - merged[f"{control_label} Abs Diff (Promo vs Baseline)"]
     )
@@ -178,8 +182,8 @@ initialize_session_state()
 
 
 RATE_KPIS = {
-    "avg store absorption rate",
-    "cal store conversion rate",
+    "store absorption rate",
+    "store conversion rate",
     "margin",
     "RP revenue share",
     "promo revenue share",
@@ -250,7 +254,16 @@ def build_weekday_chart(
     base = alt.Chart(chart_df).encode(
         x=alt.X("weekday:N", sort=["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"], axis=alt.Axis(labelAngle=0, title=None)),
         y=alt.Y(f"{kpi_col}:Q", axis=alt.Axis(format=y_axis_format, title=None)),
-        color=alt.Color("group:N", legend=alt.Legend(orient="bottom", direction="horizontal", title=None)),
+        color=alt.Color(
+            "group:N",
+            legend=alt.Legend(
+                orient="bottom",
+                direction="horizontal",
+                title=None,
+                labelLimit=500,
+                columns=1,
+            ),
+        ),
     )
 
     bars = base.mark_bar().encode(xOffset="group:N")
@@ -308,7 +321,11 @@ def build_selected_categories_waterfall_chart(
     chart_df.loc[(chart_df["Type"] == "delta") & (chart_df["Value"] < 0), "color_type"] = "decrease"
 
     bars = alt.Chart(chart_df).mark_bar().encode(
-        x=alt.X("Step:N", sort=None, axis=alt.Axis(labelAngle=0, title=None)),
+        x=alt.X(
+            "Step:N",
+            sort=None,
+            axis=alt.Axis(labelAngle=0, labelLimit=500, title=None),
+        ),
         y=alt.Y("lower:Q", title=y_axis_title),
         y2="upper:Q",
         color=alt.Color(
@@ -407,19 +424,60 @@ control_group_2_note = st.sidebar.text_input("Control Group 2 description", valu
 testing_group_1_note = st.sidebar.text_input("Testing Group 1 description", value="")
 testing_group_2_note = st.sidebar.text_input("Testing Group 2 description", value="")
 
-baseline_range = st.sidebar.date_input(
-    "baseline period",
-    value=(date.today() - timedelta(days=7), date.today() - timedelta(days=1)),
-    key="baseline_period",
-)
-promo_range = st.sidebar.date_input(
-    "promo period",
-    value=(date.today(), date.today()),
-    key="promo_period",
-)
 
-baseline_dates = normalize_date_range(baseline_range)
-promo_dates = normalize_date_range(promo_range)
+baseline_non_consecutive_toggle = st.sidebar.toggle(
+    "baseline period - select non-consecutive dates",
+    value=False,
+)
+if baseline_non_consecutive_toggle:
+    baseline_window = st.sidebar.date_input(
+        "baseline period window (not directly used in analysis; only generates selectable dates)",
+        value=(date.today() - timedelta(days=30), date.today() - timedelta(days=1)),
+        key="baseline_period_window",
+    )
+    baseline_window_dates = normalize_date_range(baseline_window)
+    baseline_dates = st.sidebar.multiselect(
+        "baseline period selected dates",
+        options=baseline_window_dates,
+        default=baseline_window_dates,
+        format_func=lambda d: d.isoformat(),
+    )
+else:
+    baseline_range = st.sidebar.date_input(
+        "baseline period",
+        value=(date.today() - timedelta(days=7), date.today() - timedelta(days=1)),
+        key="baseline_period",
+    )
+    baseline_dates = normalize_date_range(baseline_range)
+
+
+
+promo_non_consecutive_toggle = st.sidebar.toggle(
+    "promo period - select non-consecutive dates",
+    value=False,
+)
+if promo_non_consecutive_toggle:
+    promo_window = st.sidebar.date_input(
+        "promo period date window",
+        value=(date.today(), date.today() + timedelta(days=30)),
+        key="promo_period_window",
+    )
+    promo_window_dates = normalize_date_range(promo_window)
+    promo_dates = st.sidebar.multiselect(
+        "promo period selected dates",
+        options=promo_window_dates,
+        default=promo_window_dates,
+        format_func=lambda d: d.isoformat(),
+    )
+else:
+    promo_range = st.sidebar.date_input(
+        "promo period",
+        value=(date.today(), date.today()),
+        key="promo_period",
+    )
+    promo_dates = normalize_date_range(promo_range)
+
+
 selected_dates = sorted(set(baseline_dates + promo_dates))
 
 article_section_group_select_all = st.sidebar.checkbox("Select all - article_section_group", value=True)
@@ -429,7 +487,7 @@ else:
     article_section_groups = st.sidebar.multiselect(
         "article_section_group",
         options=ALL_ARTICLE_SECTION_GROUP,
-        default=[],
+        default=["D-HOSE"],
     )
 
 article_section_select_all = st.sidebar.checkbox("Select all - article_section", value=True)
@@ -439,18 +497,29 @@ else:
     article_sections = st.sidebar.multiselect(
         "article_section",
         options=ALL_ARTICLE_SECTIONS,
-        default=[],
+        default=["HOSE","JEANS"],
     )
 
-article_season_select_all = st.sidebar.checkbox("Select all - article_season", value=False)
+article_season_select_all = st.sidebar.checkbox("Select all - article_season", value=True)
 if article_season_select_all:
     article_seasons = ALL_ARTICLE_SEASONS
 else:
     article_seasons = st.sidebar.multiselect(
         "article_season",
         options=ALL_ARTICLE_SEASONS,
-        default=["GANZJAHR"],
+        default=["SOMMER"],
     )
+
+price_type_select_all = st.sidebar.checkbox("Select all - price_type", value=True)
+if price_type_select_all:
+    price_types = ALL_PRICE_TYPES
+else:
+    price_types = st.sidebar.multiselect(
+        "price_type",
+        options=ALL_PRICE_TYPES,
+        default=["RP", "BP"],
+    )
+
 
 if st.sidebar.button("Run"):
     if not selected_dates:
@@ -493,9 +562,11 @@ if st.sidebar.button("Run"):
             article_section_groups=article_section_groups,
             article_sections=article_sections,
             article_seasons=article_seasons,
+            price_types=price_types,
             bq_client=bq_client,
         )
         category_df["store_code"] = category_df["store_code"].astype(str).str.zfill(4)
+        st.session_state["category_data"] = category_df
         st.session_state["category_group_tables"] = {
             "Control Group 1": category_df[category_df["store_code"].isin([str(c).zfill(4) for c in control_group_1])],
             "Control Group 2": category_df[category_df["store_code"].isin([str(c).zfill(4) for c in control_group_2])],
@@ -507,6 +578,7 @@ if st.sidebar.button("Run"):
         st.session_state["sql"] = None
         st.session_state["group_tables"] = {}
         st.session_state["category_group_tables"] = {}
+        st.session_state["category_data"] = None
         st.error(f"Error running query: {e}")
 
 
@@ -581,6 +653,13 @@ if st.session_state.get("group_tables") or st.session_state.get("category_group_
 
 if st.session_state.get("group_tables"):
     st.subheader("Store Level (All Categories) - Funnel Analysis (Exclude Sunday)")
+    if st.session_state.get("data") is not None:
+        st.download_button(
+            "Download Raw Data (CSV): Store Level (All Categories) - Funnel Analysis (Exclude Sunday)",
+            data=st.session_state["data"].to_csv(index=False),
+            file_name="build_raw_data_sql_result.csv",
+            mime="text/csv",
+        )
     funnel_tables = st.session_state["group_tables"].get("funnel_tables", {})
     
 
@@ -621,7 +700,7 @@ if st.session_state.get("group_tables"):
         height=dataframe_height(promo_impact_df),
     )
 
-    st.caption("show all Funnel KPI (promo vs baseline) charts.")
+    st.write("Charts - All Funnel KPIs (Promo vs Baseline By Weekday)")
     show_all_funnel_kpi_charts = st.toggle(
         "show_all_funnel_kpi_promo_vs_baseline",
         value=False,
@@ -656,6 +735,13 @@ if st.session_state.get("group_tables"):
 
 if st.session_state.get("category_group_tables"):
     st.subheader("Deep Dive： Store Level Selected Categories Analysis")
+    if st.session_state.get("category_data") is not None:
+        st.download_button(
+            "Download Raw Data (CSV): Store Level Selected Categories Analysis",
+            data=st.session_state["category_data"].to_csv(index=False),
+            file_name="build_promo_article_section_level_raw_data_sql_result.csv",
+            mime="text/csv",
+        )
     category_control_table = build_selected_categories_funnel_table(
         group_df=st.session_state["category_group_tables"].get(selected_control_group, pd.DataFrame()),
         baseline_dates=baseline_dates,
@@ -869,10 +955,3 @@ if st.session_state.get("category_group_tables"):
         st.markdown("**Waterfall - Selected Categories RP vs BP PC1 Bridge**")
         _render_waterfall_pair(category_control_pc1_waterfall, category_testing_pc1_waterfall, "PC1")
 
-if st.session_state.get("data") is not None:
-    st.download_button(
-        "Download build_raw_data_sql result table (CSV)",
-        data=st.session_state["data"].to_csv(index=False),
-        file_name="build_raw_data_sql_result.csv",
-        mime="text/csv",
-    )
