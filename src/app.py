@@ -639,7 +639,7 @@ if st.session_state.get("group_tables") or st.session_state.get("category_group_
             index=2,
         )
 
-        info_control_col, _, info_testing_col = st.columns([5, 1, 5])
+    info_control_col, _, info_testing_col = st.columns([5, 1, 5])
     with info_control_col:
         selected_control_codes = group_store_map.get(selected_control_group, [])
         st.caption(f"Selected store code(s): {', '.join(selected_control_codes) if selected_control_codes else 'None'}")
