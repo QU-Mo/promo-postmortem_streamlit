@@ -26,7 +26,8 @@ def build_raw_data_sql(
         LPAD(CAST(store_code AS STRING), 4, '0') AS store_code,
         store_name,
         SUM(pedestrian_footfall) AS pedestrian_footfall,
-        COALESCE(SUM(incoming_visitors), 0) / NULLIF(SUM(pedestrian_footfall), 0) AS store_absorption_rate,
+        COALESCE(SUM(CASE WHEN pedestrian_footfall > 0 THEN incoming_visitors ELSE 0 END), 0)
+          / NULLIF(SUM(CASE WHEN pedestrian_footfall > 0 THEN pedestrian_footfall ELSE 0 END), 0) AS store_absorption_rate,
         COALESCE(SUM(orders), 0) / NULLIF(COALESCE(SUM(incoming_visitors), 0), 0) AS store_conversion_rate,
         COALESCE(SUM(incoming_visitors), 0) AS incoming_visitors,
         COALESCE(SUM(orders), 0) AS orders
@@ -323,7 +324,7 @@ def build_group_period_tables(
 
         total_orders = filtered_df["orders"].fillna(0).sum()
         incoming_visitors = filtered_df["incoming_visitors"].fillna(0).sum()
-        footfall_valid_df = filtered_df[filtered_df["pedestrian_footfall"].notna()].copy()
+        footfall_valid_df = filtered_df[filtered_df["pedestrian_footfall"] > 0].copy()
         incoming_visitors_with_footfall = footfall_valid_df["incoming_visitors"].fillna(0).sum()
         pedestrian_footfall_with_footfall = footfall_valid_df["pedestrian_footfall"].fillna(0).sum()
         total_revenue = filtered_df["total_revenue"].fillna(0).sum()
@@ -434,7 +435,7 @@ def build_group_period_tables(
         for weekday, weekday_df in filtered_df.groupby("weekday", dropna=False):
             total_orders = weekday_df["orders"].fillna(0).sum()
             incoming_visitors = weekday_df["incoming_visitors"].fillna(0).sum()
-            footfall_valid_weekday_df = weekday_df[weekday_df["pedestrian_footfall"].notna()].copy()
+            footfall_valid_weekday_df = weekday_df[weekday_df["pedestrian_footfall"] > 0].copy()
             incoming_visitors_with_footfall = footfall_valid_weekday_df["incoming_visitors"].fillna(0).sum()
             pedestrian_footfall_with_footfall = footfall_valid_weekday_df["pedestrian_footfall"].fillna(0).sum()
             total_revenue = weekday_df["total_revenue"].fillna(0).sum()
