@@ -182,8 +182,8 @@ initialize_session_state()
 
 
 RATE_KPIS = {
-    "avg store absorption rate",
-    "cal store conversion rate",
+    "store absorption rate",
+    "store conversion rate",
     "margin",
     "RP revenue share",
     "promo revenue share",
@@ -700,7 +700,7 @@ if st.session_state.get("group_tables"):
         height=dataframe_height(promo_impact_df),
     )
 
-    st.write("charts: all Funnel KPI promo vs baseline by weekday.")
+    st.write("Charts - All Funnel KPIs (Promo vs Baseline By Weekday)")
     show_all_funnel_kpi_charts = st.toggle(
         "show_all_funnel_kpi_promo_vs_baseline",
         value=False,
