@@ -254,7 +254,16 @@ def build_weekday_chart(
     base = alt.Chart(chart_df).encode(
         x=alt.X("weekday:N", sort=["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"], axis=alt.Axis(labelAngle=0, title=None)),
         y=alt.Y(f"{kpi_col}:Q", axis=alt.Axis(format=y_axis_format, title=None)),
-        color=alt.Color("group:N", legend=alt.Legend(orient="bottom", direction="horizontal", title=None)),
+        color=alt.Color(
+            "group:N",
+            legend=alt.Legend(
+                orient="bottom",
+                direction="horizontal",
+                title=None,
+                labelLimit=500,
+                columns=1,
+            ),
+        ),
     )
 
     bars = base.mark_bar().encode(xOffset="group:N")
@@ -312,7 +321,11 @@ def build_selected_categories_waterfall_chart(
     chart_df.loc[(chart_df["Type"] == "delta") & (chart_df["Value"] < 0), "color_type"] = "decrease"
 
     bars = alt.Chart(chart_df).mark_bar().encode(
-        x=alt.X("Step:N", sort=None, axis=alt.Axis(labelAngle=0, title=None)),
+        x=alt.X(
+            "Step:N",
+            sort=None,
+            axis=alt.Axis(labelAngle=-20, labelLimit=500, title=None),
+        ),
         y=alt.Y("lower:Q", title=y_axis_title),
         y2="upper:Q",
         color=alt.Color(
@@ -487,7 +500,7 @@ else:
         default=["HOSE","JEANS"],
     )
 
-article_season_select_all = st.sidebar.checkbox("Select all - article_season", value=False)
+article_season_select_all = st.sidebar.checkbox("Select all - article_season", value=True)
 if article_season_select_all:
     article_seasons = ALL_ARTICLE_SEASONS
 else:
@@ -687,7 +700,7 @@ if st.session_state.get("group_tables"):
         height=dataframe_height(promo_impact_df),
     )
 
-    st.caption("show all Funnel KPI (promo vs baseline) charts.")
+    st.write("charts: all Funnel KPI promo vs baseline by weekday.")
     show_all_funnel_kpi_charts = st.toggle(
         "show_all_funnel_kpi_promo_vs_baseline",
         value=False,
