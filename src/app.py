@@ -167,11 +167,11 @@ def build_promo_impact_table(
             "control_abs_diff": f"{control_label} Abs Diff (Promo vs Baseline)",
         }
     )
-    merged["Promo Impact (Testing Group 1 %Diff - Control Group 1 %Diff )"] = (
+    merged["Promo Impact (Group A %Diff - Group B %Diff )"] = (
          merged[f"{testing_label} % Diff (Promo vs Baseline)"]
         - merged[f"{control_label} % Diff (Promo vs Baseline)"]
     )
-    merged["Promo Impact (Testing Group 1 Abs Diff - Control Group 1 Abs Diff )"] = (
+    merged["Promo Impact (Group A Abs Diff - Group B Abs Diff )"] = (
         merged[f"{testing_label} Abs Diff (Promo vs Baseline)"]
         - merged[f"{control_label} Abs Diff (Promo vs Baseline)"]
     )
@@ -324,7 +324,7 @@ def build_selected_categories_waterfall_chart(
         x=alt.X(
             "Step:N",
             sort=None,
-            axis=alt.Axis(labelAngle=-20, labelLimit=500, title=None),
+            axis=alt.Axis(labelAngle=0, labelLimit=500, title=None),
         ),
         y=alt.Y("lower:Q", title=y_axis_title),
         y2="upper:Q",
