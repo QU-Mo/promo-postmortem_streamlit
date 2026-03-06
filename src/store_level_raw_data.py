@@ -11,6 +11,8 @@ def build_raw_data_sql(
     order_channel: str,
     order_country: str,
     selected_dates: list[date],
+    baseline_dates: list[date],
+    baseline_coefficient: float = 1.0,
     traffic_table: str = "puc-p-dataf-retmkt-npii.reports.hystreet_instore_by_day_by_store",
     order_table: str = "puc-p-dataf-retmkt-pii.datamarts.multichannel_orders",
 ) -> tuple[str, list]:
@@ -24,7 +26,8 @@ def build_raw_data_sql(
         LPAD(CAST(store_code AS STRING), 4, '0') AS store_code,
         store_name,
         SUM(pedestrian_footfall) AS pedestrian_footfall,
-        COALESCE(SUM(incoming_visitors), 0) / NULLIF(SUM(pedestrian_footfall), 0) AS store_absorption_rate,
+        COALESCE(SUM(CASE WHEN pedestrian_footfall > 0 THEN incoming_visitors ELSE 0 END), 0)
+          / NULLIF(SUM(CASE WHEN pedestrian_footfall > 0 THEN pedestrian_footfall ELSE 0 END), 0) AS store_absorption_rate,
         COALESCE(SUM(orders), 0) / NULLIF(COALESCE(SUM(incoming_visitors), 0), 0) AS store_conversion_rate,
         COALESCE(SUM(incoming_visitors), 0) AS incoming_visitors,
         COALESCE(SUM(orders), 0) AS orders
@@ -78,7 +81,26 @@ def build_raw_data_sql(
         AND traffic_date.store_code = store_level_mco_data.store_code
         AND traffic_date.store_name = store_level_mco_data.store_name
     )
-    SELECT *
+    SELECT
+      ordered_date,
+      country,
+      business_unit,
+      store_code,
+      store_name,
+      pedestrian_footfall,
+      store_absorption_rate,
+      store_conversion_rate,
+      incoming_visitors,
+      orders,
+      channel,
+      total_revenue,
+      total_RP_revenue,
+      total_promo_revenue,
+      total_quantity,
+      total_RP_quantity,
+      total_promo_quantity,
+      total_PC1,
+      total_RP_PC1
     FROM stationary_funnel_combi
     """
 
@@ -94,6 +116,43 @@ def build_raw_data_sql(
     return sql, params
 
 
+def apply_baseline_coefficient_to_store_level_raw_data(
+    raw_df: pd.DataFrame,
+    baseline_dates: list[date],
+    baseline_coefficient: float,
+) -> pd.DataFrame:
+    if raw_df.empty or baseline_coefficient == 1.0 or not baseline_dates:
+        return raw_df
+
+    adjusted_df = raw_df.copy()
+    adjusted_df["ordered_date"] = pd.to_datetime(adjusted_df["ordered_date"]).dt.date
+    baseline_date_set = set(baseline_dates)
+    baseline_mask = adjusted_df["ordered_date"].isin(baseline_date_set)
+
+    metric_cols = [
+        "pedestrian_footfall",
+        "incoming_visitors",
+        "orders",
+        "total_revenue",
+        "total_RP_revenue",
+        "total_promo_revenue",
+        "total_quantity",
+        "total_RP_quantity",
+        "total_promo_quantity",
+        "total_PC1",
+        "total_RP_PC1",
+    ]
+
+    for col in metric_cols:
+        if col not in adjusted_df.columns:
+            continue
+        adjusted_df[col] = pd.to_numeric(adjusted_df[col], errors="coerce").astype(float)
+        adjusted_df.loc[baseline_mask, col] = adjusted_df.loc[baseline_mask, col] * baseline_coefficient
+
+    return adjusted_df
+
+
+
 def fetch_raw_data(
     traffic_business_unit: str,
     traffic_country: str,
@@ -101,6 +160,8 @@ def fetch_raw_data(
     order_channel: str,
     order_country: str,
     selected_dates: list[date],
+    baseline_dates: list[date],
+    baseline_coefficient: float,
     bq_client: bigquery.Client,
     traffic_table: str = "puc-p-dataf-retmkt-npii.reports.hystreet_instore_by_day_by_store",
     order_table: str = "puc-p-dataf-retmkt-pii.datamarts.multichannel_orders",
@@ -112,12 +173,19 @@ def fetch_raw_data(
         order_channel=order_channel,
         order_country=order_country,
         selected_dates=selected_dates,
+        baseline_dates=baseline_dates,
+        baseline_coefficient=baseline_coefficient,
         traffic_table=traffic_table,
         order_table=order_table,
     )
     job_config = bigquery.QueryJobConfig(query_parameters=params)
     query_job = bq_client.query(sql, job_config=job_config)
-    return query_job.to_dataframe()
+    raw_df = query_job.to_dataframe()
+    return apply_baseline_coefficient_to_store_level_raw_data(
+        raw_df=raw_df,
+        baseline_dates=baseline_dates,
+        baseline_coefficient=baseline_coefficient,
+    )
 
 
 FETCH_RAW_DATA_DEF = inspect.getsource(fetch_raw_data)
@@ -190,10 +258,10 @@ def build_group_period_tables(
     df["weekday"] = pd.to_datetime(df["ordered_date"]).dt.day_name()
 
     group_config = {
-        "Control Group 1": control_group_1,
-        "Control Group 2": control_group_2,
-        "Testing Group 1": testing_group_1,
-        "Testing Group 2": testing_group_2,
+        "Group 1": control_group_1,
+        "Group 2": control_group_2,
+        "Group 3": testing_group_1,
+        "Group 4": testing_group_2,
     }
     period_config = {
         "Baseline Period": baseline_dates,
@@ -231,7 +299,7 @@ def build_group_period_tables(
     def _safe_div(numerator: float, denominator: float) -> float:
         return float(numerator) / float(denominator) if denominator else 0.0
 
-    def _period_metrics(subset_df: pd.DataFrame) -> dict[str, float]:
+    def _period_metrics(subset_df: pd.DataFrame, include_sunday: bool = False) -> dict[str, float]:
         if subset_df.empty:
             return {
                 "pedestrian_footfall": 0.0,
@@ -250,13 +318,13 @@ def build_group_period_tables(
                 "promo_revenue_share": 0.0,
             }
 
-        filtered_df = subset_df[subset_df["weekday"] != "Sunday"].copy()
+        filtered_df = subset_df.copy() if include_sunday else subset_df[subset_df["weekday"] != "Sunday"].copy()
         if filtered_df.empty:
-            return _period_metrics(pd.DataFrame(columns=subset_df.columns))
+            return _period_metrics(pd.DataFrame(columns=subset_df.columns), include_sunday=include_sunday)
 
         total_orders = filtered_df["orders"].fillna(0).sum()
         incoming_visitors = filtered_df["incoming_visitors"].fillna(0).sum()
-        footfall_valid_df = filtered_df[filtered_df["pedestrian_footfall"].notna()].copy()
+        footfall_valid_df = filtered_df[filtered_df["pedestrian_footfall"] > 0].copy()
         incoming_visitors_with_footfall = footfall_valid_df["incoming_visitors"].fillna(0).sum()
         pedestrian_footfall_with_footfall = footfall_valid_df["pedestrian_footfall"].fillna(0).sum()
         total_revenue = filtered_df["total_revenue"].fillna(0).sum()
@@ -288,7 +356,11 @@ def build_group_period_tables(
 
         row_defs = [
             (
-                f"pedestrian footfall (footfall trackable stores #: {baseline_metrics['footfall_trackable_stores_count']} → {promo_metrics['footfall_trackable_stores_count']})",
+               (
+                    "pedestrian footfall\n"
+                    f"(trackable stores #: {baseline_metrics['footfall_trackable_stores_count']} -->"
+                    f"{promo_metrics['footfall_trackable_stores_count']})"
+                ),
                 "pedestrian_footfall",
             ),
             ("store absorption rate", "store_absorption_rate"),
@@ -340,30 +412,13 @@ def build_group_period_tables(
             )
 
         weekday_order = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-        filtered_df = subset_df[subset_df["weekday"] != "Sunday"].copy()
-        if filtered_df.empty:
-            return pd.DataFrame(
-                columns=[
-                    "weekday",
-                    "avg_store_absorption_rate",
-                    "cal_store_conversion_rate",
-                    "total_orders",
-                    "AOV",
-                    "total_quantity",
-                    "price_per_item",
-                    "total_revenue",
-                    "total_PC1",
-                    "margin",
-                    "RP_revenue_share",
-                    "promo_revenue_share",
-                ]
-            )
+        
 
         weekday_frames = []
-        for weekday, weekday_df in filtered_df.groupby("weekday", dropna=False):
+        for weekday, weekday_df in subset_df.groupby("weekday", dropna=False):
             total_orders = weekday_df["orders"].fillna(0).sum()
             incoming_visitors = weekday_df["incoming_visitors"].fillna(0).sum()
-            footfall_valid_weekday_df = weekday_df[weekday_df["pedestrian_footfall"].notna()].copy()
+            footfall_valid_weekday_df = weekday_df[weekday_df["pedestrian_footfall"] > 0].copy()
             incoming_visitors_with_footfall = footfall_valid_weekday_df["incoming_visitors"].fillna(0).sum()
             pedestrian_footfall_with_footfall = footfall_valid_weekday_df["pedestrian_footfall"].fillna(0).sum()
             total_revenue = weekday_df["total_revenue"].fillna(0).sum()
@@ -411,32 +466,45 @@ def build_group_period_tables(
 
     subset_tables: dict[str, pd.DataFrame] = {}
     funnel_tables: dict[str, pd.DataFrame] = {}
+    funnel_tables_include_sunday: dict[str, pd.DataFrame] = {}
     period_metrics: dict[str, dict[str, dict[str, float]]] = {}
+    period_metrics_include_sunday: dict[str, dict[str, dict[str, float]]] = {}
     weekday_kpi_frames: list[pd.DataFrame] = []
     weekday_pct_diff_frames: list[pd.DataFrame] = []
 
     for group_name, stores in group_config.items():
         metrics_by_period: dict[str, dict[str, float]] = {}
+        metrics_by_period_include_sunday: dict[str, dict[str, float]] = {}
         promo_subset = pd.DataFrame(columns=df.columns)
         for period_name, period_dates in period_config.items():
             table_name = f"{group_name} - {period_name}"
             period_subset = _subset(stores, period_dates)
             subset_tables[table_name] = period_subset
-            metrics_by_period[period_name] = _period_metrics(period_subset)
+            metrics_by_period[period_name] = _period_metrics(period_subset, include_sunday=False)
+            metrics_by_period_include_sunday[period_name] = _period_metrics(period_subset, include_sunday=True)
             if period_name == "Promo Period":
                 promo_subset = period_subset
 
         period_metrics[group_name] = metrics_by_period
+        period_metrics_include_sunday[group_name] = metrics_by_period_include_sunday
         funnel_tables[group_name] = _funnel_table(
             baseline_metrics=metrics_by_period["Baseline Period"],
             promo_metrics=metrics_by_period["Promo Period"],
         )
+        funnel_tables_include_sunday[group_name] = _funnel_table(
+            baseline_metrics=metrics_by_period_include_sunday["Baseline Period"],
+            promo_metrics=metrics_by_period_include_sunday["Promo Period"],
+        )
         promo_weekday_kpis = _weekday_kpi_table(promo_subset)
         promo_weekday_kpis["group"] = group_name
-        weekday_kpi_frames.append(promo_weekday_kpis)
+        promo_weekday_kpis["period"] = "Promo Period"
 
         baseline_subset = subset_tables.get(f"{group_name} - Baseline Period", pd.DataFrame(columns=df.columns))
         baseline_weekday_kpis = _weekday_kpi_table(baseline_subset)
+        baseline_weekday_kpis["group"] = group_name
+        baseline_weekday_kpis["period"] = "Baseline Period"
+
+        weekday_kpi_frames.extend([baseline_weekday_kpis, promo_weekday_kpis])
 
         weekday_comparison_df = promo_weekday_kpis.merge(
             baseline_weekday_kpis,
@@ -444,6 +512,7 @@ def build_group_period_tables(
             how="left",
             suffixes=("_promo", "_baseline"),
         )
+        weekday_comparison_df["group"] = group_name
 
         metric_cols = [
             "avg_store_absorption_rate",
@@ -497,7 +566,9 @@ def build_group_period_tables(
     return {
         "subset_tables": subset_tables,
         "funnel_tables": funnel_tables,
+        "funnel_tables_include_sunday": funnel_tables_include_sunday,
         "period_metrics": period_metrics,
+        "period_metrics_include_sunday": period_metrics_include_sunday,
         "weekday_kpis": weekday_kpis,
         "weekday_pct_diff_kpis": weekday_pct_diff_kpis,
     }
