@@ -61,6 +61,8 @@ ALL_ARTICLE_SECTIONS = [
     "T-SHIRT-O. ARM", "TASCHE", "TECHNIK", "TRAVEL", "TUECHER", "TWINSET", "UHR", "WAESCHE", "WESTE", "UNKNOWN",
 ]
 
+ALL_PRICE_TYPES = ["RP", "BP"]
+
 def initialize_session_state() -> None:
     if "data" not in st.session_state:
         st.session_state["data"] = None
@@ -472,7 +474,7 @@ else:
     article_section_groups = st.sidebar.multiselect(
         "article_section_group",
         options=ALL_ARTICLE_SECTION_GROUP,
-        default=[],
+        default=["D-HOSE"],
     )
 
 article_section_select_all = st.sidebar.checkbox("Select all - article_section", value=True)
@@ -482,7 +484,7 @@ else:
     article_sections = st.sidebar.multiselect(
         "article_section",
         options=ALL_ARTICLE_SECTIONS,
-        default=[],
+        default=["HOSE","JEANS"],
     )
 
 article_season_select_all = st.sidebar.checkbox("Select all - article_season", value=False)
@@ -492,16 +494,16 @@ else:
     article_seasons = st.sidebar.multiselect(
         "article_season",
         options=ALL_ARTICLE_SEASONS,
-        default=["GANZJAHR"],
+        default=["SOMMER"],
     )
 
 price_type_select_all = st.sidebar.checkbox("Select all - price_type", value=True)
 if price_type_select_all:
-    price_types = ["RP", "BP"]
+    price_types = ALL_PRICE_TYPES
 else:
     price_types = st.sidebar.multiselect(
         "price_type",
-        options=["RP", "BP"],
+        options=ALL_PRICE_TYPES,
         default=["RP", "BP"],
     )
 
