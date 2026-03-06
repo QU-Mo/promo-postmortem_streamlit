@@ -239,11 +239,33 @@ def format_promo_impact_table(table_df: pd.DataFrame) -> pd.DataFrame:
         )
     return formatted_df
 
-def build_table_export_payload(table_options: dict[str, pd.DataFrame], selected_name: str) -> tuple[str, bytes]:
-    selected_df = table_options.get(selected_name, pd.DataFrame())
-    file_stub = selected_name.lower().replace(" ", "_").replace("(", "").replace(")", "")
-    csv_bytes = selected_df.to_csv(index=False).encode("utf-8")
-    return f"{file_stub}.csv", csv_bytes
+def build_store_level_export_payload(group_tables: dict[str, pd.DataFrame]) -> bytes:
+    subset_tables = group_tables.get("subset_tables", {})
+    export_frames: list[pd.DataFrame] = []
+
+    for table_name, subset_df in subset_tables.items():
+        if subset_df.empty:
+            continue
+
+        group_name, _, period_name = table_name.partition(" - ")
+        export_df = subset_df.copy()
+        export_df["ordered_date"] = pd.to_datetime(export_df["ordered_date"])
+        export_df["weekday"] = export_df["ordered_date"].dt.day_name()
+        export_df = export_df[export_df["weekday"] != "Sunday"].copy()
+        if export_df.empty:
+            continue
+
+        export_df["group"] = group_name
+        export_df["period"] = period_name
+        export_frames.append(export_df)
+
+    if not export_frames:
+        return pd.DataFrame().to_csv(index=False).encode("utf-8")
+
+    export_df = pd.concat(export_frames, ignore_index=True)
+    export_df["ordered_date"] = export_df["ordered_date"].dt.date
+    export_df = export_df.sort_values(["group", "period", "ordered_date", "store_code"])
+    return export_df.to_csv(index=False).encode("utf-8")
 
 
 
@@ -665,11 +687,11 @@ if st.session_state.get("group_tables") or st.session_state.get("category_group_
 
 if st.session_state.get("group_tables"):
     st.subheader("Store Level (All Categories) - Funnel Analysis (Exclude Sunday)")
-    if st.session_state.get("data") is not None:
+    if st.session_state.get("group_tables"):
         st.download_button(
             "Download Raw Data (CSV): Store Level (All Categories) - Funnel Analysis (Exclude Sunday)",
-            data=st.session_state["data"].to_csv(index=False),
-            file_name="build_raw_data_sql_result.csv",
+            data=build_store_level_export_payload(st.session_state["group_tables"]),
+            file_name="store_level_all_categories_exclude_sunday.csv",
             mime="text/csv",
         )
     funnel_tables = st.session_state["group_tables"].get("funnel_tables", {})
@@ -712,24 +734,7 @@ if st.session_state.get("group_tables"):
         height=dataframe_height(promo_impact_df),
     )
 
-    st.markdown("**Export Specific UI Table (CSV)**")
-    store_level_tables = {
-        f"{_group_label(selected_control_group)} - Funnel": format_funnel_table(control_df),
-        f"{_group_label(selected_testing_group)} - Funnel": format_funnel_table(testing_df),
-        "Promo Impact": format_promo_impact_table(promo_impact_df),
-    }
-    selected_store_level_table = st.selectbox(
-        "Choose a table to export",
-        options=list(store_level_tables.keys()),
-        key="store_level_export_table_selector",
-    )
-    export_file_name, export_data = build_table_export_payload(store_level_tables, selected_store_level_table)
-    st.download_button(
-        label=f"Download Selected Table: {selected_store_level_table}",
-        data=export_data,
-        file_name=export_file_name,
-        mime="text/csv",
-    )
+    
 
     st.write("Charts - All Funnel KPIs (Promo vs Baseline By Weekday)")
     show_all_funnel_kpi_charts = st.toggle(
@@ -806,25 +811,7 @@ if st.session_state.get("category_group_tables"):
     st.markdown("**Promo Impact**")
     st.dataframe(format_promo_impact_table(category_promo_impact), width='stretch')
 
-    st.markdown("**Export Specific UI Table (CSV)**")
-    category_tables = {
-        f"{_group_label(selected_control_group)} - Selected Categories Funnel": format_funnel_table(category_control_table),
-        f"{_group_label(selected_testing_group)} - Selected Categories Funnel": format_funnel_table(category_testing_table),
-        "Selected Categories Promo Impact": format_promo_impact_table(category_promo_impact),
-    }
-    selected_category_table = st.selectbox(
-        "Choose a selected-categories table to export",
-        options=list(category_tables.keys()),
-        key="category_export_table_selector",
-    )
-    category_file_name, category_export_data = build_table_export_payload(category_tables, selected_category_table)
-    st.download_button(
-        label=f"Download Selected Table: {selected_category_table}",
-        data=category_export_data,
-        file_name=category_file_name,
-        mime="text/csv",
-    )
-
+    
     category_control_existing_split_waterfall = build_selected_categories_existing_non_existing_waterfall_table(
         group_df=st.session_state["category_group_tables"].get(selected_control_group, pd.DataFrame()),
         baseline_dates=baseline_dates,
