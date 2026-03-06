@@ -409,11 +409,6 @@ control_group_2_note = st.sidebar.text_input("Control Group 2 description", valu
 testing_group_1_note = st.sidebar.text_input("Testing Group 1 description", value="")
 testing_group_2_note = st.sidebar.text_input("Testing Group 2 description", value="")
 
-baseline_range = st.sidebar.date_input(
-    "baseline period",
-    value=(date.today() - timedelta(days=7), date.today() - timedelta(days=1)),
-    key="baseline_period",
-)
 
 baseline_non_consecutive_toggle = st.sidebar.toggle(
     "baseline period - select non-consecutive dates",
@@ -421,7 +416,7 @@ baseline_non_consecutive_toggle = st.sidebar.toggle(
 )
 if baseline_non_consecutive_toggle:
     baseline_window = st.sidebar.date_input(
-        "baseline period date window",
+        "baseline period window (not directly used in analysis; only generates selectable dates)",
         value=(date.today() - timedelta(days=30), date.today() - timedelta(days=1)),
         key="baseline_period_window",
     )
@@ -433,13 +428,14 @@ if baseline_non_consecutive_toggle:
         format_func=lambda d: d.isoformat(),
     )
 else:
+    baseline_range = st.sidebar.date_input(
+        "baseline period",
+        value=(date.today() - timedelta(days=7), date.today() - timedelta(days=1)),
+        key="baseline_period",
+    )
     baseline_dates = normalize_date_range(baseline_range)
 
-promo_range = st.sidebar.date_input(
-    "promo period",
-    value=(date.today(), date.today()),
-    key="promo_period",
-)
+
 
 promo_non_consecutive_toggle = st.sidebar.toggle(
     "promo period - select non-consecutive dates",
@@ -459,6 +455,11 @@ if promo_non_consecutive_toggle:
         format_func=lambda d: d.isoformat(),
     )
 else:
+    promo_range = st.sidebar.date_input(
+        "promo period",
+        value=(date.today(), date.today()),
+        key="promo_period",
+    )
     promo_dates = normalize_date_range(promo_range)
 
 
