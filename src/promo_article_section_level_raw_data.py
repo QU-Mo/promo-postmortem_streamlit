@@ -21,9 +21,10 @@ def build_promo_article_section_level_raw_data_sql(
 ) -> tuple[str, list]:
     """Returns SQL query and parameters for promo article-section-level raw data."""
     sql = f"""
-    SELECT
+    
+      SELECT
       EXTRACT(DATE FROM ordered_at) AS ordered_date,
-     country,
+      country,
       company_name_short,
       channel,
       LPAD(CAST(tenant AS STRING), 4, '0') AS store_code,
@@ -34,21 +35,10 @@ def build_promo_article_section_level_raw_data_sql(
       insider_customer_type,
       CASE WHEN article_price_red_eur IS NOT NULL THEN 'RP' ELSE 'BP' END AS price_type,
       CASE WHEN has_promotion THEN 'promo' ELSE 'non-promo' END AS promo_check,
-      IF(
-        EXTRACT(DATE FROM ordered_at) IN UNNEST(@baseline_dates),
-        ROUND(COALESCE(SUM(revenue_after_cancellations_and_returns_eur_incl_forecast), 0), 2) * @baseline_coefficient,
-        ROUND(COALESCE(SUM(revenue_after_cancellations_and_returns_eur_incl_forecast), 0), 2)
-      ) AS total_revenue,
-      IF(
-        EXTRACT(DATE FROM ordered_at) IN UNNEST(@baseline_dates),
-        ROUND(COALESCE(SUM(quantity_ordered_after_cancellations_and_returns_incl_forecast), 0), 2) * @baseline_coefficient,
-        ROUND(COALESCE(SUM(quantity_ordered_after_cancellations_and_returns_incl_forecast), 0), 2)
-      ) AS total_quantity,
-      IF(
-        EXTRACT(DATE FROM ordered_at) IN UNNEST(@baseline_dates),
-        ROUND(COALESCE(SUM(profit_contribution_1_eur_incl_forecast), 0), 2) * @baseline_coefficient,
-        ROUND(COALESCE(SUM(profit_contribution_1_eur_incl_forecast), 0), 2)
-      ) AS total_PC1
+      
+     ROUND(COALESCE(SUM(revenue_after_cancellations_and_returns_eur_incl_forecast), 0), 2)) AS total_revenue,
+     ROUND(COALESCE(SUM(quantity_ordered_after_cancellations_and_returns_incl_forecast), 0), 2)) AS total_quantity,
+    ROUND(COALESCE(SUM(profit_contribution_1_eur_incl_forecast), 0), 2)) AS total_PC1
     FROM `{order_table}` AS mco
     LEFT JOIN UNNEST(order_items) AS oi
     WHERE channel = @order_channel
@@ -83,8 +73,6 @@ def build_promo_article_section_level_raw_data_sql(
         bigquery.ScalarQueryParameter("order_company_name_short", "STRING", order_company_name_short),
         bigquery.ScalarQueryParameter("order_channel", "STRING", order_channel),
         bigquery.ScalarQueryParameter("order_country", "STRING", order_country),
-        bigquery.ScalarQueryParameter("baseline_coefficient", "FLOAT64", baseline_coefficient),
-        bigquery.ArrayQueryParameter("baseline_dates", "DATE", [str(d) for d in baseline_dates]),
         bigquery.ArrayQueryParameter("selected_dates", "DATE", normalized_dates),
         bigquery.ArrayQueryParameter("store_codes", "STRING", store_codes),
         bigquery.ArrayQueryParameter("article_section_groups", "STRING", article_section_groups),
@@ -103,6 +91,29 @@ def build_promo_article_section_level_raw_data_sql(
     ]
 
     return sql, params
+
+
+def apply_baseline_coefficient_to_promo_article_section_level_raw_data(
+    raw_df: pd.DataFrame,
+    baseline_dates: list[date],
+    baseline_coefficient: float,
+) -> pd.DataFrame:
+    if raw_df.empty or baseline_coefficient == 1.0 or not baseline_dates:
+        return raw_df
+
+    adjusted_df = raw_df.copy()
+    adjusted_df["ordered_date"] = pd.to_datetime(adjusted_df["ordered_date"]).dt.date
+    baseline_date_set = set(baseline_dates)
+    baseline_mask = adjusted_df["ordered_date"].isin(baseline_date_set)
+
+    metric_cols = ["total_revenue", "total_quantity", "total_PC1"]
+    for col in metric_cols:
+        if col not in adjusted_df.columns:
+            continue
+        adjusted_df[col] = pd.to_numeric(adjusted_df[col], errors="coerce").astype(float)
+        adjusted_df.loc[baseline_mask, col] = adjusted_df.loc[baseline_mask, col] * baseline_coefficient
+
+    return adjusted_df
 
 
 def fetch_promo_article_section_level_raw_data(
@@ -140,7 +151,12 @@ def fetch_promo_article_section_level_raw_data(
     )
     job_config = bigquery.QueryJobConfig(query_parameters=params)
     query_job = bq_client.query(sql, job_config=job_config)
-    return query_job.to_dataframe()
+    raw_df = query_job.to_dataframe()
+    return apply_baseline_coefficient_to_promo_article_section_level_raw_data(
+        raw_df=raw_df,
+        baseline_dates=baseline_dates,
+        baseline_coefficient=baseline_coefficient,
+    )
 
 
 

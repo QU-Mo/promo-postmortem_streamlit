@@ -86,20 +86,20 @@ def build_raw_data_sql(
       business_unit,
       store_code,
       store_name,
-      IF(ordered_date IN UNNEST(@baseline_dates), pedestrian_footfall * @baseline_coefficient, pedestrian_footfall) AS pedestrian_footfall,
+      pedestrian_footfall,
       store_absorption_rate,
       store_conversion_rate,
-      IF(ordered_date IN UNNEST(@baseline_dates), incoming_visitors * @baseline_coefficient, incoming_visitors) AS incoming_visitors,
-      IF(ordered_date IN UNNEST(@baseline_dates), orders * @baseline_coefficient, orders) AS orders,
+      incoming_visitors,
+      orders,
       channel,
-      IF(ordered_date IN UNNEST(@baseline_dates), total_revenue * @baseline_coefficient, total_revenue) AS total_revenue,
-      IF(ordered_date IN UNNEST(@baseline_dates), total_RP_revenue * @baseline_coefficient, total_RP_revenue) AS total_RP_revenue,
-      IF(ordered_date IN UNNEST(@baseline_dates), total_promo_revenue * @baseline_coefficient, total_promo_revenue) AS total_promo_revenue,
-      IF(ordered_date IN UNNEST(@baseline_dates), total_quantity * @baseline_coefficient, total_quantity) AS total_quantity,
-      IF(ordered_date IN UNNEST(@baseline_dates), total_RP_quantity * @baseline_coefficient, total_RP_quantity) AS total_RP_quantity,
-      IF(ordered_date IN UNNEST(@baseline_dates), total_promo_quantity * @baseline_coefficient, total_promo_quantity) AS total_promo_quantity,
-      IF(ordered_date IN UNNEST(@baseline_dates), total_PC1 * @baseline_coefficient, total_PC1) AS total_PC1,
-      IF(ordered_date IN UNNEST(@baseline_dates), total_RP_PC1 * @baseline_coefficient, total_RP_PC1) AS total_RP_PC1
+      total_revenue,
+      total_RP_revenue,
+      total_promo_revenue,
+      total_quantity,
+      total_RP_quantity,
+      total_promo_quantity,
+      total_PC1,
+      total_RP_PC1
     FROM stationary_funnel_combi
     """
 
@@ -110,11 +110,46 @@ def build_raw_data_sql(
         bigquery.ScalarQueryParameter("order_company_name_short", "STRING", order_company_name_short),
         bigquery.ScalarQueryParameter("order_channel", "STRING", order_channel),
         bigquery.ScalarQueryParameter("order_country", "STRING", order_country),
-        bigquery.ScalarQueryParameter("baseline_coefficient", "FLOAT64", baseline_coefficient),
-        bigquery.ArrayQueryParameter("baseline_dates", "DATE", [str(d) for d in baseline_dates]),
         bigquery.ArrayQueryParameter("selected_dates", "DATE", normalized_dates),
     ]
     return sql, params
+
+
+def apply_baseline_coefficient_to_store_level_raw_data(
+    raw_df: pd.DataFrame,
+    baseline_dates: list[date],
+    baseline_coefficient: float,
+) -> pd.DataFrame:
+    if raw_df.empty or baseline_coefficient == 1.0 or not baseline_dates:
+        return raw_df
+
+    adjusted_df = raw_df.copy()
+    adjusted_df["ordered_date"] = pd.to_datetime(adjusted_df["ordered_date"]).dt.date
+    baseline_date_set = set(baseline_dates)
+    baseline_mask = adjusted_df["ordered_date"].isin(baseline_date_set)
+
+    metric_cols = [
+        "pedestrian_footfall",
+        "incoming_visitors",
+        "orders",
+        "total_revenue",
+        "total_RP_revenue",
+        "total_promo_revenue",
+        "total_quantity",
+        "total_RP_quantity",
+        "total_promo_quantity",
+        "total_PC1",
+        "total_RP_PC1",
+    ]
+
+    for col in metric_cols:
+        if col not in adjusted_df.columns:
+            continue
+        adjusted_df[col] = pd.to_numeric(adjusted_df[col], errors="coerce").astype(float)
+        adjusted_df.loc[baseline_mask, col] = adjusted_df.loc[baseline_mask, col] * baseline_coefficient
+
+    return adjusted_df
+
 
 
 def fetch_raw_data(
@@ -144,7 +179,12 @@ def fetch_raw_data(
     )
     job_config = bigquery.QueryJobConfig(query_parameters=params)
     query_job = bq_client.query(sql, job_config=job_config)
-    return query_job.to_dataframe()
+    raw_df = query_job.to_dataframe()
+    return apply_baseline_coefficient_to_store_level_raw_data(
+        raw_df=raw_df,
+        baseline_dates=baseline_dates,
+        baseline_coefficient=baseline_coefficient,
+    )
 
 
 FETCH_RAW_DATA_DEF = inspect.getsource(fetch_raw_data)
