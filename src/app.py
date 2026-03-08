@@ -405,7 +405,7 @@ def build_selected_categories_waterfall_chart(
     waterfall_df: pd.DataFrame,
     title: str,
     y_axis_title: str = "Value",
-    chart_height: int = 420,
+    chart_height: int = 800,
 ) -> alt.Chart:
     if waterfall_df.empty:
         return alt.Chart(pd.DataFrame({"Step": [], "Value": []})).mark_bar()
@@ -442,9 +442,10 @@ def build_selected_categories_waterfall_chart(
             sort=None,
             axis=alt.Axis(labelAngle=0, labelFontWeight="bold", labelLimit=500, title=None),
         ),
-        y=alt.Y(
+         y=alt.Y(
             "lower:Q",
-            axis=alt.Axis(title=y_axis_title, labels=False, ticks=False),
+            title=y_axis_title,
+            axis=alt.Axis(titleFontWeight="bold", labelFontWeight="bold"),
         ),
         y2="upper:Q",
         color=alt.Color(
@@ -970,10 +971,18 @@ if st.session_state.get("category_group_tables"):
     category_control_col, _, category_testing_col = st.columns([5, 1, 5])
     with category_control_col:
         st.markdown(f"**{_group_label(selected_control_group)}**")
-        st.dataframe(format_funnel_table(category_control_table), width='stretch')
+        st.dataframe(
+            format_funnel_table(category_control_table),
+            width='stretch',
+            height=dataframe_height(category_control_table),
+        )
     with category_testing_col:
         st.markdown(f"**{_group_label(selected_testing_group)}**")
-        st.dataframe(format_funnel_table(category_testing_table), width='stretch')
+        st.dataframe(
+            format_funnel_table(category_control_table),
+            width='stretch',
+            height=dataframe_height(category_control_table),
+        )
 
     category_promo_impact = build_promo_impact_table(
         funnel_tables=category_funnel_tables,
@@ -981,7 +990,11 @@ if st.session_state.get("category_group_tables"):
         selected_testing_group=selected_testing_group,
     )
     st.markdown("**Promo Impact**")
-    st.dataframe(format_promo_impact_table(category_promo_impact), width='stretch')
+    st.dataframe(
+        format_promo_impact_table(category_promo_impact),
+        width='stretch',
+        height=dataframe_height(category_promo_impact),
+    )
 
     
     category_control_existing_split_waterfall = build_selected_categories_existing_non_existing_waterfall_table(
