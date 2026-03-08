@@ -283,7 +283,11 @@ def build_weekday_chart(
     y_axis_format = ".0%"
 
     base = alt.Chart(chart_df).encode(
-        x=alt.X("weekday:N", sort=["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], axis=alt.Axis(labelAngle=0, title=None)),
+         x=alt.X(
+            "weekday:N",
+            sort=["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
+            axis=alt.Axis(labelAngle=0, labelFontWeight="bold", title=None),
+        ),
         y=alt.Y(f"{kpi_col}:Q", axis=alt.Axis(format=y_axis_format, title=None)),
         color=alt.Color(
             "group:N",
@@ -339,7 +343,7 @@ def build_weekday_kpi_trend_chart(
         x=alt.X(
             "date_weekday_label:N",
             sort=chart_df["date_weekday_label"].tolist(),
-            axis=alt.Axis(labelAngle=0, title=None),
+            axis=alt.Axis(labelAngle=0, labelFontWeight="bold", title=None),
         ),
         y=alt.Y(f"{kpi_col}:Q", axis=alt.Axis(format=y_axis_format, title=None)),
         color=alt.Color(
@@ -436,9 +440,12 @@ def build_selected_categories_waterfall_chart(
         x=alt.X(
             "Step:N",
             sort=None,
-            axis=alt.Axis(labelAngle=0, labelLimit=500, title=None),
+            axis=alt.Axis(labelAngle=0, labelFontWeight="bold", labelLimit=500, title=None),
         ),
-        y=alt.Y("lower:Q", title=y_axis_title),
+        y=alt.Y(
+            "lower:Q",
+            axis=alt.Axis(title=y_axis_title, labels=False, ticks=False),
+        ),
         y2="upper:Q",
         color=alt.Color(
             "color_type:N",
