@@ -1,8 +1,10 @@
 import streamlit as st
 from datetime import date, timedelta
+import json
 from google.cloud import bigquery
 import pandas as pd
 import altair as alt
+
 
 
 from store_level_raw_data import (
@@ -264,6 +266,9 @@ def build_store_level_export_payload(group_tables: dict[str, pd.DataFrame]) -> b
     export_df = export_df.sort_values(["group", "period", "ordered_date", "store_code"])
     return export_df.to_csv(index=False).encode("utf-8")
 
+def build_ui_selection_export_payload(ui_selection: dict) -> bytes:
+    return json.dumps(ui_selection, ensure_ascii=False, indent=2).encode("utf-8")
+
 
 
 def build_weekday_chart(
@@ -402,7 +407,7 @@ def build_selected_categories_waterfall_chart(
         return alt.Chart(pd.DataFrame({"Step": [], "Value": []})).mark_bar()
 
     chart_df = waterfall_df.copy().reset_index(drop=True)
-    chart_df["Value"] = pd.to_numeric(chart_df["Value"], errors="coerce").fillna(0.0)
+    chart_df["Value"] = pd.to_numeric(chart_df["Value"], errors="coerce").fillna(0.0).round(0)
 
     running_total = []
     starts = []
@@ -447,7 +452,7 @@ def build_selected_categories_waterfall_chart(
     labels = alt.Chart(chart_df).mark_text(dy=-10, fontSize=13, fontWeight="bold").encode(
         x=alt.X("Step:N", sort=None),
         y=alt.Y("upper:Q"),
-        text=alt.Text("Value:Q", format=",.2f"),
+        text=alt.Text("Value:Q", format=",.0f"),
     )
     return (bars + labels).properties(title=alt.TitleParams(text=title, anchor="middle"), height=chart_height)
 
@@ -595,6 +600,43 @@ else:
         options=ALL_PRICE_TYPES,
         default=["RP", "BP"],
     )
+
+
+ui_selection_payload = {
+    "traffic_business_unit": traffic_business_unit,
+    "traffic_country": traffic_country,
+    "order_company_name_short": order_company_name_short,
+    "order_channel": order_channel,
+    "order_country": order_country,
+    "vat": vat,
+    "baseline_coefficient": baseline_coefficient,
+    "groups": {
+        "Group 1": control_group_1,
+        "Group 2": control_group_2,
+        "Group 3": testing_group_1,
+        "Group 4": testing_group_2,
+    },
+    "group_descriptions": {
+        "Group 1": control_group_1_note,
+        "Group 2": control_group_2_note,
+        "Group 3": testing_group_1_note,
+        "Group 4": testing_group_2_note,
+    },
+    "baseline_dates": [d.isoformat() for d in baseline_dates],
+    "promo_dates": [d.isoformat() for d in promo_dates],
+    "article_section_groups": article_section_groups,
+    "article_sections": article_sections,
+    "article_seasons": article_seasons,
+    "price_types": price_types,
+}
+
+st.sidebar.download_button(
+    "Export UI Selection (JSON)",
+    data=build_ui_selection_export_payload(ui_selection_payload),
+    file_name="promo_postmortem_ui_selection.json",
+    mime="application/json",
+)
+
 
 
 if st.sidebar.button("Run"):
@@ -754,6 +796,10 @@ if st.session_state.get("group_tables"):
     
 
     selected_groups = [selected_control_group, selected_testing_group]
+    chart_show_group_a = st.toggle(f"Charts series: show {selected_control_group}", value=True)
+    chart_show_group_b = st.toggle(f"Charts series: show {selected_testing_group}", value=True)
+    chart_show_both_groups = st.toggle("Charts series: show both groups", value=True)
+
     control_table_col, _, testing_table_col = st.columns([5, 1, 5])
     with control_table_col:
         control_df = funnel_tables.get(selected_control_group, pd.DataFrame())
@@ -802,8 +848,20 @@ if st.session_state.get("group_tables"):
     if show_all_funnel_kpi_charts:
         weekday_pct_kpis = st.session_state["group_tables"].get("weekday_pct_diff_kpis", pd.DataFrame())
         daily_kpis = st.session_state["group_tables"].get("daily_kpis", pd.DataFrame())
-        pct_chart_df = weekday_pct_kpis[weekday_pct_kpis["group"].isin(selected_groups)].copy()
-        line_chart_df = daily_kpis[daily_kpis["group"].isin(selected_groups)].copy()
+        chart_groups: list[str] = []
+        if chart_show_both_groups:
+            chart_groups = selected_groups.copy()
+        else:
+            if chart_show_group_a:
+                chart_groups.append(selected_control_group)
+            if chart_show_group_b:
+                chart_groups.append(selected_testing_group)
+
+        if not chart_groups:
+            st.info("Please enable at least one chart series toggle to display charts.")
+
+        pct_chart_df = weekday_pct_kpis[weekday_pct_kpis["group"].isin(chart_groups)].copy()
+        line_chart_df = daily_kpis[daily_kpis["group"].isin(chart_groups)].copy()
 
         if not pct_chart_df.empty:
             pct_chart_df["group"] = pct_chart_df["group"].map(_group_label)
