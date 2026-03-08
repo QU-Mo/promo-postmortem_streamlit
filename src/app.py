@@ -326,9 +326,8 @@ def build_weekday_kpi_trend_chart(
 
     base = alt.Chart(chart_df).encode(
         x=alt.X(
-            "weekday:N",
-            sort=["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
-            axis=alt.Axis(labelAngle=0, title=None),
+            "ordered_date:T",
+            axis=alt.Axis(labelAngle=0, title=None, format="%Y-%m-%d"),
         ),
         y=alt.Y(f"{kpi_col}:Q", axis=alt.Axis(format=y_axis_format, title=None)),
         color=alt.Color(
@@ -798,62 +797,64 @@ if st.session_state.get("group_tables"):
 
     if show_all_funnel_kpi_charts:
         weekday_pct_kpis = st.session_state["group_tables"].get("weekday_pct_diff_kpis", pd.DataFrame())
-        weekday_kpis = st.session_state["group_tables"].get("weekday_kpis", pd.DataFrame())
+        daily_kpis = st.session_state["group_tables"].get("daily_kpis", pd.DataFrame())
         pct_chart_df = weekday_pct_kpis[weekday_pct_kpis["group"].isin(selected_groups)].copy()
-        line_chart_df = weekday_kpis[weekday_kpis["group"].isin(selected_groups)].copy()
+        line_chart_df = daily_kpis[daily_kpis["group"].isin(selected_groups)].copy()
 
         if not pct_chart_df.empty:
             pct_chart_df["group"] = pct_chart_df["group"].map(_group_label)
         if not line_chart_df.empty:
             line_chart_df["group"] = line_chart_df["group"].map(_group_label)
+            line_chart_df["ordered_date"] = pd.to_datetime(line_chart_df["ordered_date"], errors="coerce")
+            line_chart_df = line_chart_df.dropna(subset=["ordered_date"]).sort_values("ordered_date")
             line_chart_df["series"] = line_chart_df["group"] + " - " + line_chart_df["period"]
 
         weekday_charts = [
             (
-                "Avg Store Absorption Rate % Diff by Weekday",
+                "Store Absorption Rate % Diff by Weekday",
                 "avg_store_absorption_rate_pct_diff",
                 "avg_store_absorption_rate",
-                "Avg Store Absorption Rate by Weekday (Baseline vs Promo)",
+                "Store Absorption Rate (Baseline vs Promo)",
             ),
             (
-                "Cal Store Conversion Rate % Diff by Weekday",
+                "Store Conversion Rate % Diff by Weekday",
                 "cal_store_conversion_rate_pct_diff",
                 "cal_store_conversion_rate",
-                "Cal Store Conversion Rate by Weekday (Baseline vs Promo)",
+                "Store Conversion Rate (Baseline vs Promo)",
             ),
-            ("Total Orders % Diff by Weekday", "total_orders_pct_diff", "total_orders", "Total Orders by Weekday (Baseline vs Promo)"),
-            ("AOV % Diff by Weekday", "AOV_pct_diff", "AOV", "AOV by Weekday (Baseline vs Promo)"),
+            ("Total Orders % Diff by Weekday", "total_orders_pct_diff", "total_orders", "Total Orders (Baseline vs Promo)"),
+            ("AOV % Diff by Weekday", "AOV_pct_diff", "AOV", "AOV (Baseline vs Promo)"),
             (
                 "Total Quantity % Diff by Weekday",
                 "total_quantity_pct_diff",
                 "total_quantity",
-                "Total Quantity by Weekday (Baseline vs Promo)",
+                "Total Quantity (Baseline vs Promo)",
             ),
             (
                 "Price per Item % Diff by Weekday",
                 "price_per_item_pct_diff",
                 "price_per_item",
-                "Price per Item by Weekday (Baseline vs Promo)",
+                "Price per Item (Baseline vs Promo)",
             ),
             (
                 "Total Revenue % Diff by Weekday",
                 "total_revenue_pct_diff",
                 "total_revenue",
-                "Total Revenue by Weekday (Baseline vs Promo)",
+                "Total Revenue (Baseline vs Promo)",
             ),
-            ("Total PC1 % Diff by Weekday", "total_PC1_pct_diff", "total_PC1", "Total PC1 by Weekday (Baseline vs Promo)"),
-            ("Margin % Diff by Weekday", "margin_pct_diff", "margin", "Margin by Weekday (Baseline vs Promo)"),
+            ("Total PC1 % Diff by Weekday", "total_PC1_pct_diff", "total_PC1", "Total PC1 (Baseline vs Promo)"),
+            ("Margin % Diff by Weekday", "margin_pct_diff", "margin", "Margin (Baseline vs Promo)"),
             (
                 "RP Revenue Share % Diff by Weekday",
                 "RP_revenue_share_pct_diff",
                 "RP_revenue_share",
-                "RP Revenue Share by Weekday (Baseline vs Promo)",
+                "RP Revenue Share (Baseline vs Promo)",
             ),
             (
                 "Promo Revenue Share % Diff by Weekday",
                 "promo_revenue_share_pct_diff",
                 "promo_revenue_share",
-                "Promo Revenue Share by Weekday (Baseline vs Promo)",
+                 "Promo Revenue Share (Baseline vs Promo)",
             ),
         ]
 
