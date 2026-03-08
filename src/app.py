@@ -405,7 +405,7 @@ def build_selected_categories_waterfall_chart(
     waterfall_df: pd.DataFrame,
     title: str,
     y_axis_title: str = "Value",
-    chart_height: int = 560,
+    chart_height: int = 540,
 ) -> alt.Chart:
     if waterfall_df.empty:
         return alt.Chart(pd.DataFrame({"Step": [], "Value": []})).mark_bar()
