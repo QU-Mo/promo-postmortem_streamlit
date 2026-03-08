@@ -631,10 +631,10 @@ ui_selection_payload = {
 }
 
 st.sidebar.download_button(
-    "Export UI Selection (JSON)",
+    "Export UI Selection (TXT)",
     data=build_ui_selection_export_payload(ui_selection_payload),
-    file_name="promo_postmortem_ui_selection.json",
-    mime="application/json",
+    file_name="promo_postmortem_ui_selection.txt",
+    mime="text/plain",
 )
 
 
