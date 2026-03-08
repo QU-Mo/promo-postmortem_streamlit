@@ -1,8 +1,10 @@
 import streamlit as st
 from datetime import date, timedelta
+import json
 from google.cloud import bigquery
 import pandas as pd
 import altair as alt
+
 
 
 from store_level_raw_data import (
@@ -264,6 +266,9 @@ def build_store_level_export_payload(group_tables: dict[str, pd.DataFrame]) -> b
     export_df = export_df.sort_values(["group", "period", "ordered_date", "store_code"])
     return export_df.to_csv(index=False).encode("utf-8")
 
+def build_ui_selection_export_payload(ui_selection: dict) -> bytes:
+    return json.dumps(ui_selection, ensure_ascii=False, indent=2).encode("utf-8")
+
 
 
 def build_weekday_chart(
@@ -278,7 +283,11 @@ def build_weekday_chart(
     y_axis_format = ".0%"
 
     base = alt.Chart(chart_df).encode(
-        x=alt.X("weekday:N", sort=["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], axis=alt.Axis(labelAngle=0, title=None)),
+         x=alt.X(
+            "weekday:N",
+            sort=["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
+            axis=alt.Axis(labelAngle=0, labelFontWeight="bold", title=None),
+        ),
         y=alt.Y(f"{kpi_col}:Q", axis=alt.Axis(format=y_axis_format, title=None)),
         color=alt.Color(
             "group:N",
@@ -324,11 +333,17 @@ def build_weekday_kpi_trend_chart(
     y_axis_format = ".0%" if is_rate_metric else ",.0f"
     text_format = ".2%" if is_rate_metric else ",.0f"
 
+    chart_df["ordered_date"] = pd.to_datetime(chart_df["ordered_date"], errors="coerce")
+    chart_df = chart_df.dropna(subset=["ordered_date"]).sort_values("ordered_date")
+    chart_df["ordered_date_label"] = chart_df["ordered_date"].dt.strftime("%Y-%m-%d")
+    chart_df["weekday_label"] = chart_df["ordered_date"].dt.day_name()
+    chart_df["date_weekday_label"] = chart_df["ordered_date_label"] + "\n" + chart_df["weekday_label"]
+
     base = alt.Chart(chart_df).encode(
         x=alt.X(
-            "weekday:N",
-            sort=["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
-            axis=alt.Axis(labelAngle=0, title=None),
+            "date_weekday_label:N",
+            sort=chart_df["date_weekday_label"].tolist(),
+            axis=alt.Axis(labelAngle=0, labelFontWeight="bold", title=None),
         ),
         y=alt.Y(f"{kpi_col}:Q", axis=alt.Axis(format=y_axis_format, title=None)),
         color=alt.Color(
@@ -357,17 +372,46 @@ def build_weekday_kpi_trend_chart(
         title=None,
     )
 
+
+def resolve_group_store_selection(
+    group_label: str,
+    group_options: list[str],
+    key_prefix: str,
+) -> list[str]:
+    select_all = st.sidebar.checkbox(f"Select all stores - {group_label}", value=True, key=f"{key_prefix}_all")
+    if select_all:
+        return group_options
+
+    selection_mode = st.sidebar.radio(
+        f"{group_label} selection mode",
+        options=["Include", "Except"],
+        horizontal=True,
+        key=f"{key_prefix}_mode",
+    )
+    chosen_stores = st.sidebar.multiselect(
+        f"{group_label} (store code)",
+        options=group_options,
+        default=[],
+        key=f"{key_prefix}_stores",
+    )
+    if selection_mode == "Except":
+        excluded = set(chosen_stores)
+        return [store_code for store_code in group_options if store_code not in excluded]
+    return chosen_stores
+
+
+
 def build_selected_categories_waterfall_chart(
     waterfall_df: pd.DataFrame,
     title: str,
     y_axis_title: str = "Value",
-    chart_height: int = 420,
+    chart_height: int = 540,
 ) -> alt.Chart:
     if waterfall_df.empty:
         return alt.Chart(pd.DataFrame({"Step": [], "Value": []})).mark_bar()
 
     chart_df = waterfall_df.copy().reset_index(drop=True)
-    chart_df["Value"] = pd.to_numeric(chart_df["Value"], errors="coerce").fillna(0.0)
+    chart_df["Value"] = pd.to_numeric(chart_df["Value"], errors="coerce").fillna(0.0).round(0)
 
     running_total = []
     starts = []
@@ -396,9 +440,13 @@ def build_selected_categories_waterfall_chart(
         x=alt.X(
             "Step:N",
             sort=None,
-            axis=alt.Axis(labelAngle=0, labelLimit=500, title=None),
+            axis=alt.Axis(labelAngle=0, labelFontWeight="bold", labelLimit=500, title=None),
         ),
-        y=alt.Y("lower:Q", title=y_axis_title),
+         y=alt.Y(
+            "lower:Q",
+            title=y_axis_title,
+            axis=alt.Axis(titleFontWeight="bold", labelFontWeight="bold", labels=False),
+        ),
         y2="upper:Q",
         color=alt.Color(
             "color_type:N",
@@ -412,7 +460,7 @@ def build_selected_categories_waterfall_chart(
     labels = alt.Chart(chart_df).mark_text(dy=-10, fontSize=13, fontWeight="bold").encode(
         x=alt.X("Step:N", sort=None),
         y=alt.Y("upper:Q"),
-        text=alt.Text("Value:Q", format=",.2f"),
+        text=alt.Text("Value:Q", format=",.0f"),
     )
     return (bars + labels).properties(title=alt.TitleParams(text=title, anchor="middle"), height=chart_height)
 
@@ -453,44 +501,12 @@ except Exception as error:
 
 store_options = build_store_options(store_codes)
 
-control_group_1_select_all = st.sidebar.checkbox("Select all stores - group 1", value=True)
-if control_group_1_select_all:
-    control_group_1 = store_options["control_group_1"]
-else:
-    control_group_1 = st.sidebar.multiselect(
-        "group 1 (store code)",
-        options=store_options["control_group_1"],
-        default=[],
-    )
 
-control_group_2_select_all = st.sidebar.checkbox("Select all stores - group 2", value=True)
-if control_group_2_select_all:
-    control_group_2 = store_options["control_group_2"]
-else:
-    control_group_2 = st.sidebar.multiselect(
-        "group 2 (store code)",
-        options=store_options["control_group_2"],
-        default=[],
-    )
+control_group_1 = resolve_group_store_selection("group 1", store_options["control_group_1"], "group_1")
+control_group_2 = resolve_group_store_selection("group 2", store_options["control_group_2"], "group_2")
+testing_group_1 = resolve_group_store_selection("group 3", store_options["testing_group_1"], "group_3")
+testing_group_2 = resolve_group_store_selection("group 4", store_options["testing_group_2"], "group_4")
 
-testing_group_1_select_all = st.sidebar.checkbox("Select all stores - group 3", value=True)
-if testing_group_1_select_all:
-    testing_group_1 = store_options["testing_group_1"]
-else:
-    testing_group_1 = st.sidebar.multiselect(
-        "group 3 (store code)",
-        options=store_options["testing_group_1"],
-        default=[],
-    )
-testing_group_2_select_all = st.sidebar.checkbox("Select all stores - group 4", value=True)
-if testing_group_2_select_all:
-    testing_group_2 = store_options["testing_group_2"]
-else:
-    testing_group_2 = st.sidebar.multiselect(
-        "group 4 (store code)",
-        options=store_options["testing_group_2"],
-        default=[],
-    )
 
 control_group_1_note = st.sidebar.text_input("Group 1 description", value="")
 control_group_2_note = st.sidebar.text_input("Group 2 description", value="")
@@ -592,6 +608,43 @@ else:
         options=ALL_PRICE_TYPES,
         default=["RP", "BP"],
     )
+
+
+ui_selection_payload = {
+    "traffic_business_unit": traffic_business_unit,
+    "traffic_country": traffic_country,
+    "order_company_name_short": order_company_name_short,
+    "order_channel": order_channel,
+    "order_country": order_country,
+    "vat": vat,
+    "baseline_coefficient": baseline_coefficient,
+    "groups": {
+        "Group 1": control_group_1,
+        "Group 2": control_group_2,
+        "Group 3": testing_group_1,
+        "Group 4": testing_group_2,
+    },
+    "group_descriptions": {
+        "Group 1": control_group_1_note,
+        "Group 2": control_group_2_note,
+        "Group 3": testing_group_1_note,
+        "Group 4": testing_group_2_note,
+    },
+    "baseline_dates": [d.isoformat() for d in baseline_dates],
+    "promo_dates": [d.isoformat() for d in promo_dates],
+    "article_section_groups": article_section_groups,
+    "article_sections": article_sections,
+    "article_seasons": article_seasons,
+    "price_types": price_types,
+}
+
+st.sidebar.download_button(
+    "Export UI Selection (TXT)",
+    data=build_ui_selection_export_payload(ui_selection_payload),
+    file_name="promo_postmortem_ui_selection.txt",
+    mime="text/plain",
+)
+
 
 
 if st.sidebar.button("Run"):
@@ -751,6 +804,10 @@ if st.session_state.get("group_tables"):
     
 
     selected_groups = [selected_control_group, selected_testing_group]
+    chart_show_group_a = st.toggle(f"Charts series: show {selected_control_group}", value=True)
+    chart_show_group_b = st.toggle(f"Charts series: show {selected_testing_group}", value=True)
+    chart_show_both_groups = st.toggle("Charts series: show both groups", value=True)
+
     control_table_col, _, testing_table_col = st.columns([5, 1, 5])
     with control_table_col:
         control_df = funnel_tables.get(selected_control_group, pd.DataFrame())
@@ -798,62 +855,76 @@ if st.session_state.get("group_tables"):
 
     if show_all_funnel_kpi_charts:
         weekday_pct_kpis = st.session_state["group_tables"].get("weekday_pct_diff_kpis", pd.DataFrame())
-        weekday_kpis = st.session_state["group_tables"].get("weekday_kpis", pd.DataFrame())
-        pct_chart_df = weekday_pct_kpis[weekday_pct_kpis["group"].isin(selected_groups)].copy()
-        line_chart_df = weekday_kpis[weekday_kpis["group"].isin(selected_groups)].copy()
+        daily_kpis = st.session_state["group_tables"].get("daily_kpis", pd.DataFrame())
+        chart_groups: list[str] = []
+        if chart_show_both_groups:
+            chart_groups = selected_groups.copy()
+        else:
+            if chart_show_group_a:
+                chart_groups.append(selected_control_group)
+            if chart_show_group_b:
+                chart_groups.append(selected_testing_group)
+
+        if not chart_groups:
+            st.info("Please enable at least one chart series toggle to display charts.")
+
+        pct_chart_df = weekday_pct_kpis[weekday_pct_kpis["group"].isin(chart_groups)].copy()
+        line_chart_df = daily_kpis[daily_kpis["group"].isin(chart_groups)].copy()
 
         if not pct_chart_df.empty:
             pct_chart_df["group"] = pct_chart_df["group"].map(_group_label)
         if not line_chart_df.empty:
             line_chart_df["group"] = line_chart_df["group"].map(_group_label)
+            line_chart_df["ordered_date"] = pd.to_datetime(line_chart_df["ordered_date"], errors="coerce")
+            line_chart_df = line_chart_df.dropna(subset=["ordered_date"]).sort_values("ordered_date")
             line_chart_df["series"] = line_chart_df["group"] + " - " + line_chart_df["period"]
 
         weekday_charts = [
             (
-                "Avg Store Absorption Rate % Diff by Weekday",
+                "Store Absorption Rate % Diff by Weekday",
                 "avg_store_absorption_rate_pct_diff",
                 "avg_store_absorption_rate",
-                "Avg Store Absorption Rate by Weekday (Baseline vs Promo)",
+                "Store Absorption Rate (Baseline vs Promo)",
             ),
             (
-                "Cal Store Conversion Rate % Diff by Weekday",
+                "Store Conversion Rate % Diff by Weekday",
                 "cal_store_conversion_rate_pct_diff",
                 "cal_store_conversion_rate",
-                "Cal Store Conversion Rate by Weekday (Baseline vs Promo)",
+                "Store Conversion Rate (Baseline vs Promo)",
             ),
-            ("Total Orders % Diff by Weekday", "total_orders_pct_diff", "total_orders", "Total Orders by Weekday (Baseline vs Promo)"),
-            ("AOV % Diff by Weekday", "AOV_pct_diff", "AOV", "AOV by Weekday (Baseline vs Promo)"),
+            ("Total Orders % Diff by Weekday", "total_orders_pct_diff", "total_orders", "Total Orders (Baseline vs Promo)"),
+            ("AOV % Diff by Weekday", "AOV_pct_diff", "AOV", "AOV (Baseline vs Promo)"),
             (
                 "Total Quantity % Diff by Weekday",
                 "total_quantity_pct_diff",
                 "total_quantity",
-                "Total Quantity by Weekday (Baseline vs Promo)",
+                "Total Quantity (Baseline vs Promo)",
             ),
             (
                 "Price per Item % Diff by Weekday",
                 "price_per_item_pct_diff",
                 "price_per_item",
-                "Price per Item by Weekday (Baseline vs Promo)",
+                "Price per Item (Baseline vs Promo)",
             ),
             (
                 "Total Revenue % Diff by Weekday",
                 "total_revenue_pct_diff",
                 "total_revenue",
-                "Total Revenue by Weekday (Baseline vs Promo)",
+                "Total Revenue (Baseline vs Promo)",
             ),
-            ("Total PC1 % Diff by Weekday", "total_PC1_pct_diff", "total_PC1", "Total PC1 by Weekday (Baseline vs Promo)"),
-            ("Margin % Diff by Weekday", "margin_pct_diff", "margin", "Margin by Weekday (Baseline vs Promo)"),
+            ("Total PC1 % Diff by Weekday", "total_PC1_pct_diff", "total_PC1", "Total PC1 (Baseline vs Promo)"),
+            ("Margin % Diff by Weekday", "margin_pct_diff", "margin", "Margin (Baseline vs Promo)"),
             (
                 "RP Revenue Share % Diff by Weekday",
                 "RP_revenue_share_pct_diff",
                 "RP_revenue_share",
-                "RP Revenue Share by Weekday (Baseline vs Promo)",
+                "RP Revenue Share (Baseline vs Promo)",
             ),
             (
                 "Promo Revenue Share % Diff by Weekday",
                 "promo_revenue_share_pct_diff",
                 "promo_revenue_share",
-                "Promo Revenue Share by Weekday (Baseline vs Promo)",
+                 "Promo Revenue Share (Baseline vs Promo)",
             ),
         ]
 
@@ -900,10 +971,18 @@ if st.session_state.get("category_group_tables"):
     category_control_col, _, category_testing_col = st.columns([5, 1, 5])
     with category_control_col:
         st.markdown(f"**{_group_label(selected_control_group)}**")
-        st.dataframe(format_funnel_table(category_control_table), width='stretch')
+        st.dataframe(
+            format_funnel_table(category_control_table),
+            width='stretch',
+            height=dataframe_height(category_control_table),
+        )
     with category_testing_col:
         st.markdown(f"**{_group_label(selected_testing_group)}**")
-        st.dataframe(format_funnel_table(category_testing_table), width='stretch')
+        st.dataframe(
+            format_funnel_table(category_control_table),
+            width='stretch',
+            height=dataframe_height(category_control_table),
+        )
 
     category_promo_impact = build_promo_impact_table(
         funnel_tables=category_funnel_tables,
@@ -911,7 +990,11 @@ if st.session_state.get("category_group_tables"):
         selected_testing_group=selected_testing_group,
     )
     st.markdown("**Promo Impact**")
-    st.dataframe(format_promo_impact_table(category_promo_impact), width='stretch')
+    st.dataframe(
+        format_promo_impact_table(category_promo_impact),
+        width='stretch',
+        height=dataframe_height(category_promo_impact),
+    )
 
     
     category_control_existing_split_waterfall = build_selected_categories_existing_non_existing_waterfall_table(

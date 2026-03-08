@@ -49,6 +49,7 @@ def build_raw_data_sql(
         ROUND(COALESCE(SUM(CASE WHEN article_price_red_eur IS NOT NULL THEN revenue_after_cancellations_and_returns_eur_incl_forecast END), 0), 2) AS total_RP_revenue,
         ROUND(COALESCE(SUM(CASE WHEN has_promotion THEN revenue_after_cancellations_and_returns_eur_incl_forecast END), 0), 2) AS total_promo_revenue,
         ROUND(COALESCE(SUM(quantity_ordered_after_cancellations_and_returns_incl_forecast), 0), 2) AS total_quantity,
+        ROUND(COALESCE(SUM(CASE WHEN insider_customer_type = 'EXISTING' THEN revenue_after_cancellations_and_returns_eur_incl_forecast END), 0), 2) AS total_existing_revenue,
         ROUND(COALESCE(SUM(CASE WHEN article_price_red_eur IS NOT NULL THEN quantity_ordered_after_cancellations_and_returns_incl_forecast END), 0), 2) AS total_RP_quantity,
         ROUND(COALESCE(SUM(CASE WHEN has_promotion THEN quantity_ordered_after_cancellations_and_returns_incl_forecast END), 0), 2) AS total_promo_quantity,
         ROUND(COALESCE(SUM(profit_contribution_1_eur_incl_forecast), 0), 2) AS total_PC1,
@@ -69,6 +70,7 @@ def build_raw_data_sql(
         total_RP_revenue,
         total_promo_revenue,
         total_quantity,
+        total_existing_revenue,
         total_RP_quantity,
         total_promo_quantity,
         total_PC1,
@@ -96,6 +98,7 @@ def build_raw_data_sql(
       total_revenue,
       total_RP_revenue,
       total_promo_revenue,
+      total_existing_revenue,
       total_quantity,
       total_RP_quantity,
       total_promo_quantity,
@@ -136,6 +139,7 @@ def apply_baseline_coefficient_to_store_level_raw_data(
         "total_revenue",
         "total_RP_revenue",
         "total_promo_revenue",
+        "total_existing_revenue",
         "total_quantity",
         "total_RP_quantity",
         "total_promo_quantity",
@@ -314,6 +318,9 @@ def build_group_period_tables(
                 "total_revenue": 0.0,
                 "total_PC1": 0.0,
                 "margin": 0.0,
+                "existing_revenue": 0.0,
+                "RP_revenue": 0.0,
+                "promo_revenue": 0.0,
                 "RP_revenue_share": 0.0,
                 "promo_revenue_share": 0.0,
             }
@@ -332,6 +339,7 @@ def build_group_period_tables(
         total_pc1 = filtered_df["total_PC1"].fillna(0).sum()
         total_rp_revenue = filtered_df["total_RP_revenue"].fillna(0).sum()
         total_promo_revenue = filtered_df["total_promo_revenue"].fillna(0).sum()
+        total_existing_revenue = filtered_df["total_existing_revenue"].fillna(0).sum()
 
         return {
             "pedestrian_footfall": filtered_df["pedestrian_footfall"].fillna(0).sum(),
@@ -346,6 +354,9 @@ def build_group_period_tables(
             "total_revenue": total_revenue,
             "total_PC1": total_pc1,
             "margin": _safe_div(total_pc1, total_revenue) * vat,
+            "RP_revenue": total_rp_revenue,
+            "promo_revenue": total_promo_revenue,
+            "existing_revenue": total_existing_revenue,
             "RP_revenue_share": _safe_div(total_rp_revenue, total_revenue),
             "promo_revenue_share": _safe_div(total_promo_revenue, total_revenue),
         }
@@ -373,6 +384,9 @@ def build_group_period_tables(
             ("total revenue", "total_revenue"),
             ("total PC1", "total_PC1"),
             ("margin", "margin"),
+            ("RP revenue", "RP_revenue"),
+            ("promo revenue", "promo_revenue"),
+            ("existing revenue", "existing_revenue"),
             ("RP revenue share", "RP_revenue_share"),
             ("promo revenue share", "promo_revenue_share"),
         ]
@@ -463,6 +477,76 @@ def build_group_period_tables(
                 "promo_revenue_share",
             ]
         ]
+    
+    def _daily_kpi_table(subset_df: pd.DataFrame) -> pd.DataFrame:
+        if subset_df.empty:
+            return pd.DataFrame(
+                columns=[
+                    "ordered_date",
+                    "avg_store_absorption_rate",
+                    "cal_store_conversion_rate",
+                    "total_orders",
+                    "AOV",
+                    "total_quantity",
+                    "price_per_item",
+                    "total_revenue",
+                    "total_PC1",
+                    "margin",
+                    "RP_revenue_share",
+                    "promo_revenue_share",
+                ]
+            )
+
+        daily_frames = []
+        for ordered_date, date_df in subset_df.groupby("ordered_date", dropna=False):
+            total_orders = date_df["orders"].fillna(0).sum()
+            incoming_visitors = date_df["incoming_visitors"].fillna(0).sum()
+            footfall_valid_date_df = date_df[date_df["pedestrian_footfall"] > 0].copy()
+            incoming_visitors_with_footfall = footfall_valid_date_df["incoming_visitors"].fillna(0).sum()
+            pedestrian_footfall_with_footfall = footfall_valid_date_df["pedestrian_footfall"].fillna(0).sum()
+            total_revenue = date_df["total_revenue"].fillna(0).sum()
+            total_quantity = date_df["total_quantity"].fillna(0).sum()
+            total_pc1 = date_df["total_PC1"].fillna(0).sum()
+            total_rp_revenue = date_df["total_RP_revenue"].fillna(0).sum()
+            total_promo_revenue = date_df["total_promo_revenue"].fillna(0).sum()
+
+            daily_frames.append(
+                {
+                    "ordered_date": pd.to_datetime(ordered_date),
+                    "avg_store_absorption_rate": _safe_div(incoming_visitors_with_footfall, pedestrian_footfall_with_footfall),
+                    "cal_store_conversion_rate": _safe_div(total_orders, incoming_visitors),
+                    "total_orders": total_orders,
+                    "AOV": _safe_div(total_revenue, total_orders),
+                    "total_quantity": total_quantity,
+                    "price_per_item": _safe_div(total_revenue, total_quantity),
+                    "total_revenue": total_revenue,
+                    "total_PC1": total_pc1,
+                    "margin": _safe_div(total_pc1, total_revenue) * vat,
+                    "RP_revenue_share": _safe_div(total_rp_revenue, total_revenue),
+                    "promo_revenue_share": _safe_div(total_promo_revenue, total_revenue),
+                }
+            )
+
+        daily_df = pd.DataFrame(daily_frames)
+        daily_df["ordered_date"] = pd.to_datetime(daily_df["ordered_date"])
+        daily_df = daily_df.sort_values("ordered_date")
+        return daily_df[
+            [
+                "ordered_date",
+                "avg_store_absorption_rate",
+                "cal_store_conversion_rate",
+                "total_orders",
+                "AOV",
+                "total_quantity",
+                "price_per_item",
+                "total_revenue",
+                "total_PC1",
+                "margin",
+                "RP_revenue_share",
+                "promo_revenue_share",
+            ]
+        ]
+
 
     subset_tables: dict[str, pd.DataFrame] = {}
     funnel_tables: dict[str, pd.DataFrame] = {}
@@ -470,6 +554,7 @@ def build_group_period_tables(
     period_metrics: dict[str, dict[str, dict[str, float]]] = {}
     period_metrics_include_sunday: dict[str, dict[str, dict[str, float]]] = {}
     weekday_kpi_frames: list[pd.DataFrame] = []
+    daily_kpi_frames: list[pd.DataFrame] = []
     weekday_pct_diff_frames: list[pd.DataFrame] = []
 
     for group_name, stores in group_config.items():
@@ -498,13 +583,19 @@ def build_group_period_tables(
         promo_weekday_kpis = _weekday_kpi_table(promo_subset)
         promo_weekday_kpis["group"] = group_name
         promo_weekday_kpis["period"] = "Promo Period"
+        promo_daily_kpis = _daily_kpi_table(promo_subset)
+        promo_daily_kpis["group"] = group_name
+        promo_daily_kpis["period"] = "Promo Period"
 
         baseline_subset = subset_tables.get(f"{group_name} - Baseline Period", pd.DataFrame(columns=df.columns))
         baseline_weekday_kpis = _weekday_kpi_table(baseline_subset)
         baseline_weekday_kpis["group"] = group_name
-        baseline_weekday_kpis["period"] = "Baseline Period"
+        baseline_daily_kpis = _daily_kpi_table(baseline_subset)
+        baseline_daily_kpis["group"] = group_name
+        baseline_daily_kpis["period"] = "Baseline Period"
 
         weekday_kpi_frames.extend([baseline_weekday_kpis, promo_weekday_kpis])
+        daily_kpi_frames.extend([baseline_daily_kpis, promo_daily_kpis])
 
         weekday_comparison_df = promo_weekday_kpis.merge(
             baseline_weekday_kpis,
@@ -561,6 +652,7 @@ def build_group_period_tables(
         )
 
     weekday_kpis = pd.concat(weekday_kpi_frames, ignore_index=True)
+    daily_kpis = pd.concat(daily_kpi_frames, ignore_index=True)
     weekday_pct_diff_kpis = pd.concat(weekday_pct_diff_frames, ignore_index=True)
 
     return {
@@ -570,5 +662,6 @@ def build_group_period_tables(
         "period_metrics": period_metrics,
         "period_metrics_include_sunday": period_metrics_include_sunday,
         "weekday_kpis": weekday_kpis,
+        "daily_kpis": daily_kpis,
         "weekday_pct_diff_kpis": weekday_pct_diff_kpis,
     }
