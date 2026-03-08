@@ -324,10 +324,17 @@ def build_weekday_kpi_trend_chart(
     y_axis_format = ".0%" if is_rate_metric else ",.0f"
     text_format = ".2%" if is_rate_metric else ",.0f"
 
+    chart_df["ordered_date"] = pd.to_datetime(chart_df["ordered_date"], errors="coerce")
+    chart_df = chart_df.dropna(subset=["ordered_date"]).sort_values("ordered_date")
+    chart_df["ordered_date_label"] = chart_df["ordered_date"].dt.strftime("%Y-%m-%d")
+    chart_df["weekday_label"] = chart_df["ordered_date"].dt.day_name()
+    chart_df["date_weekday_label"] = chart_df["ordered_date_label"] + "\n" + chart_df["weekday_label"]
+
     base = alt.Chart(chart_df).encode(
         x=alt.X(
-            "ordered_date:T",
-            axis=alt.Axis(labelAngle=0, title=None, format="%Y-%m-%d"),
+            "date_weekday_label:N",
+            sort=chart_df["date_weekday_label"].tolist(),
+            axis=alt.Axis(labelAngle=0, title=None),
         ),
         y=alt.Y(f"{kpi_col}:Q", axis=alt.Axis(format=y_axis_format, title=None)),
         color=alt.Color(
@@ -355,6 +362,35 @@ def build_weekday_kpi_trend_chart(
         direction="horizontal",
         title=None,
     )
+
+
+def resolve_group_store_selection(
+    group_label: str,
+    group_options: list[str],
+    key_prefix: str,
+) -> list[str]:
+    select_all = st.sidebar.checkbox(f"Select all stores - {group_label}", value=True, key=f"{key_prefix}_all")
+    if select_all:
+        return group_options
+
+    selection_mode = st.sidebar.radio(
+        f"{group_label} selection mode",
+        options=["Include", "Except"],
+        horizontal=True,
+        key=f"{key_prefix}_mode",
+    )
+    chosen_stores = st.sidebar.multiselect(
+        f"{group_label} (store code)",
+        options=group_options,
+        default=[],
+        key=f"{key_prefix}_stores",
+    )
+    if selection_mode == "Except":
+        excluded = set(chosen_stores)
+        return [store_code for store_code in group_options if store_code not in excluded]
+    return chosen_stores
+
+
 
 def build_selected_categories_waterfall_chart(
     waterfall_df: pd.DataFrame,
@@ -452,44 +488,12 @@ except Exception as error:
 
 store_options = build_store_options(store_codes)
 
-control_group_1_select_all = st.sidebar.checkbox("Select all stores - group 1", value=True)
-if control_group_1_select_all:
-    control_group_1 = store_options["control_group_1"]
-else:
-    control_group_1 = st.sidebar.multiselect(
-        "group 1 (store code)",
-        options=store_options["control_group_1"],
-        default=[],
-    )
 
-control_group_2_select_all = st.sidebar.checkbox("Select all stores - group 2", value=True)
-if control_group_2_select_all:
-    control_group_2 = store_options["control_group_2"]
-else:
-    control_group_2 = st.sidebar.multiselect(
-        "group 2 (store code)",
-        options=store_options["control_group_2"],
-        default=[],
-    )
+control_group_1 = resolve_group_store_selection("group 1", store_options["control_group_1"], "group_1")
+control_group_2 = resolve_group_store_selection("group 2", store_options["control_group_2"], "group_2")
+testing_group_1 = resolve_group_store_selection("group 3", store_options["testing_group_1"], "group_3")
+testing_group_2 = resolve_group_store_selection("group 4", store_options["testing_group_2"], "group_4")
 
-testing_group_1_select_all = st.sidebar.checkbox("Select all stores - group 3", value=True)
-if testing_group_1_select_all:
-    testing_group_1 = store_options["testing_group_1"]
-else:
-    testing_group_1 = st.sidebar.multiselect(
-        "group 3 (store code)",
-        options=store_options["testing_group_1"],
-        default=[],
-    )
-testing_group_2_select_all = st.sidebar.checkbox("Select all stores - group 4", value=True)
-if testing_group_2_select_all:
-    testing_group_2 = store_options["testing_group_2"]
-else:
-    testing_group_2 = st.sidebar.multiselect(
-        "group 4 (store code)",
-        options=store_options["testing_group_2"],
-        default=[],
-    )
 
 control_group_1_note = st.sidebar.text_input("Group 1 description", value="")
 control_group_2_note = st.sidebar.text_input("Group 2 description", value="")
