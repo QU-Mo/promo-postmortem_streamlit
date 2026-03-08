@@ -445,7 +445,7 @@ def build_selected_categories_waterfall_chart(
          y=alt.Y(
             "lower:Q",
             title=y_axis_title,
-            axis=alt.Axis(titleFontWeight="bold", labelFontWeight="bold"),
+            axis=alt.Axis(titleFontWeight="bold", labelFontWeight="bold", labels=False),
         ),
         y2="upper:Q",
         color=alt.Color(
