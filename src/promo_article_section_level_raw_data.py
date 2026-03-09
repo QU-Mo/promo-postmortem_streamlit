@@ -186,6 +186,16 @@ def build_selected_categories_funnel_table(
         promo_revenue = revenue[df["promo_check"] == "promo"].sum(min_count=1)
         existing_revenue = revenue[df["insider_customer_type"] == "EXISTING"].sum(min_count=1)
 
+        quantity = pd.to_numeric(df["total_quantity"], errors="coerce")
+        rp_quantity = quantity[df["price_type"] == "RP"].sum(min_count=1)
+        promo_quantity = quantity[df["promo_check"] == "promo"].sum(min_count=1)
+        existing_quantity = quantity[df["insider_customer_type"] == "EXISTING"].sum(min_count=1)
+
+        pc1 = pd.to_numeric(df["total_PC1"], errors="coerce")
+        rp_pc1 = pc1[df["price_type"] == "RP"].sum(min_count=1)
+        promo_pc1 = pc1[df["promo_check"] == "promo"].sum(min_count=1)
+        existing_pc1 = pc1[df["insider_customer_type"] == "EXISTING"].sum(min_count=1)
+
         return {
             "total quantity (selected categories)": total_quantity,
             "price per item (selected categories)": total_revenue / total_quantity if total_quantity else float("nan"),
@@ -195,6 +205,15 @@ def build_selected_categories_funnel_table(
             "RP revenue (selected categories)": rp_revenue,
             "promo revenue (selected categories)": promo_revenue,
             "existing revenue (selected categories)": existing_revenue,
+             "RP quantity (selected categories)": rp_quantity,
+            "promo quantity (selected categories)": promo_quantity,
+            "existing quantity (selected categories)": existing_quantity,
+            "RP PC1 (selected categories)": rp_pc1,
+            "promo PC1 (selected categories)": promo_pc1,
+            "existing PC1 (selected categories)": existing_pc1,
+            "RP margin (selected categories)": round((rp_pc1 / rp_revenue) * vat, 4) if rp_revenue else float("nan"),
+            "promo margin (selected categories)": round((promo_pc1 / promo_revenue) * vat, 4) if promo_revenue else float("nan"),
+            "existing margin (selected categories)": round((existing_pc1 / existing_revenue) * vat, 4) if existing_revenue else float("nan"),
             "RP revenue share (selected categories)": rp_revenue / total_revenue if total_revenue else float("nan"),
             "promo revenue share (selected categories)": promo_revenue / total_revenue if total_revenue else float("nan"),
             "existing revenue share (selected categories)": existing_revenue / total_revenue if total_revenue else float("nan"),
@@ -214,6 +233,15 @@ def build_selected_categories_funnel_table(
         "promo revenue (selected categories)",
         "existing revenue (selected categories)",
         "RP revenue share (selected categories)",
+        "RP quantity (selected categories)",
+        "promo quantity (selected categories)",
+        "existing quantity (selected categories)",
+        "RP PC1 (selected categories)",
+        "promo PC1 (selected categories)",
+        "existing PC1 (selected categories)",
+        "RP margin (selected categories)",
+        "promo margin (selected categories)",
+        "existing margin (selected categories)",
         "promo revenue share (selected categories)",
         "existing revenue share (selected categories)",
     ]:

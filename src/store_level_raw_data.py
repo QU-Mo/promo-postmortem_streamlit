@@ -112,8 +112,11 @@ def build_raw_data_sql(
       total_quantity,
       total_RP_quantity,
       total_promo_quantity,
+      total_existing_quantity,
       total_PC1,
-      total_RP_PC1
+      total_RP_PC1,
+      total_promo_PC1,
+      total_existing_PC1
     FROM stationary_funnel_combi
     """
 
@@ -153,8 +156,11 @@ def apply_baseline_coefficient_to_store_level_raw_data(
         "total_quantity",
         "total_RP_quantity",
         "total_promo_quantity",
+        "total_existing_quantity",
         "total_PC1",
         "total_RP_PC1",
+        "total_promo_PC1",
+        "total_existing_PC1",
     ]
 
     for col in metric_cols:
@@ -298,11 +304,15 @@ def build_group_period_tables(
         "total_revenue",
         "total_RP_revenue",
         "total_promo_revenue",
+        "total_existing_revenue",
         "total_quantity",
         "total_RP_quantity",
         "total_promo_quantity",
+        "total_existing_quantity",
         "total_PC1",
         "total_RP_PC1",
+        "total_promo_PC1",
+        "total_existing_PC1",
     ]
     avg_cols = ["store_absorption_rate", "store_conversion_rate"]
 
@@ -329,6 +339,15 @@ def build_group_period_tables(
                 "total_PC1": 0.0,
                 "margin": 0.0,
                 "existing_revenue": 0.0,
+                "RP_quantity": 0.0,
+                "promo_quantity": 0.0,
+                "existing_quantity": 0.0,
+                "RP_PC1": 0.0,
+                "promo_PC1": 0.0,
+                "existing_PC1": 0.0,
+                "RP_margin": 0.0,
+                "promo_margin": 0.0,
+                "existing_margin": 0.0,
                 "RP_revenue": 0.0,
                 "promo_revenue": 0.0,
                 "RP_revenue_share": 0.0,
@@ -350,6 +369,12 @@ def build_group_period_tables(
         total_rp_revenue = filtered_df["total_RP_revenue"].fillna(0).sum()
         total_promo_revenue = filtered_df["total_promo_revenue"].fillna(0).sum()
         total_existing_revenue = filtered_df["total_existing_revenue"].fillna(0).sum()
+        total_rp_quantity = filtered_df["total_RP_quantity"].fillna(0).sum()
+        total_promo_quantity = filtered_df["total_promo_quantity"].fillna(0).sum()
+        total_existing_quantity = filtered_df["total_existing_quantity"].fillna(0).sum()
+        total_rp_pc1 = filtered_df["total_RP_PC1"].fillna(0).sum()
+        total_promo_pc1 = filtered_df["total_promo_PC1"].fillna(0).sum()
+        total_existing_pc1 = filtered_df["total_existing_PC1"].fillna(0).sum()
 
         return {
             "pedestrian_footfall": filtered_df["pedestrian_footfall"].fillna(0).sum(),
@@ -367,6 +392,15 @@ def build_group_period_tables(
             "RP_revenue": total_rp_revenue,
             "promo_revenue": total_promo_revenue,
             "existing_revenue": total_existing_revenue,
+            "RP_quantity": total_rp_quantity,
+            "promo_quantity": total_promo_quantity,
+            "existing_quantity": total_existing_quantity,
+            "RP_PC1": total_rp_pc1,
+            "promo_PC1": total_promo_pc1,
+            "existing_PC1": total_existing_pc1,
+            "RP_margin": _safe_div(total_rp_pc1, total_rp_revenue) * vat,
+            "promo_margin": _safe_div(total_promo_pc1, total_promo_revenue) * vat,
+            "existing_margin": _safe_div(total_existing_pc1, total_existing_revenue) * vat,
             "RP_revenue_share": _safe_div(total_rp_revenue, total_revenue),
             "promo_revenue_share": _safe_div(total_promo_revenue, total_revenue),
         }
@@ -397,6 +431,15 @@ def build_group_period_tables(
             ("RP revenue", "RP_revenue"),
             ("promo revenue", "promo_revenue"),
             ("existing revenue", "existing_revenue"),
+            ("RP quantity", "RP_quantity"),
+            ("promo quantity", "promo_quantity"),
+            ("existing quantity", "existing_quantity"),
+            ("RP PC1", "RP_PC1"),
+            ("promo PC1", "promo_PC1"),
+            ("existing PC1", "existing_PC1"),
+            ("RP margin", "RP_margin"),
+            ("promo margin", "promo_margin"),
+            ("existing margin", "existing_margin"),
             ("RP revenue share", "RP_revenue_share"),
             ("promo revenue share", "promo_revenue_share"),
         ]
