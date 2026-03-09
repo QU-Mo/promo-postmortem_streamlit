@@ -27,7 +27,7 @@ from promo_article_section_level_raw_data import (
 )
 
 
-st.set_page_config(page_title="Promo Post-Mortem", layout="wide")
+st.set_page_config(page_title="Promo Post Mortem Calculator", layout="wide")
 
 
 
@@ -477,7 +477,7 @@ def format_date_list(dates: list[date]) -> str:
     return f"{dates[0].isoformat()} to {dates[-1].isoformat()}"
 
 
-st.title("Promo Post Mortem")
+st.title("Promo Post Mortem Calculator")
 
 st.sidebar.header("Configuration")
 

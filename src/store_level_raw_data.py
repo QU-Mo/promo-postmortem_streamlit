@@ -352,6 +352,7 @@ def build_group_period_tables(
                 "promo_revenue": 0.0,
                 "RP_revenue_share": 0.0,
                 "promo_revenue_share": 0.0,
+                "existing_revenue_share": 0.0,
             }
 
         filtered_df = subset_df.copy() if include_sunday else subset_df[subset_df["weekday"] != "Sunday"].copy()
@@ -403,6 +404,7 @@ def build_group_period_tables(
             "existing_margin": _safe_div(total_existing_pc1, total_existing_revenue) * vat,
             "RP_revenue_share": _safe_div(total_rp_revenue, total_revenue),
             "promo_revenue_share": _safe_div(total_promo_revenue, total_revenue),
+            "existing_revenue_share": _safe_div(total_existing_revenue, total_revenue),
         }
 
     def _funnel_table(baseline_metrics: dict[str, float], promo_metrics: dict[str, float]) -> pd.DataFrame:
@@ -442,6 +444,7 @@ def build_group_period_tables(
             ("existing margin", "existing_margin"),
             ("RP revenue share", "RP_revenue_share"),
             ("promo revenue share", "promo_revenue_share"),
+            ("existing revenue share", "existing_revenue_share"),
         ]
 
         rows = []
