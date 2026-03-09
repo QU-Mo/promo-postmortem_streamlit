@@ -232,7 +232,6 @@ def build_selected_categories_funnel_table(
         "RP revenue (selected categories)",
         "promo revenue (selected categories)",
         "existing revenue (selected categories)",
-        "RP revenue share (selected categories)",
         "RP quantity (selected categories)",
         "promo quantity (selected categories)",
         "existing quantity (selected categories)",
@@ -244,6 +243,7 @@ def build_selected_categories_funnel_table(
         "existing margin (selected categories)",
         "promo revenue share (selected categories)",
         "existing revenue share (selected categories)",
+        "RP revenue share (selected categories)",
     ]:
         baseline_value = baseline_metrics.get(kpi, float("nan"))
         promo_value = promo_metrics.get(kpi, float("nan"))
