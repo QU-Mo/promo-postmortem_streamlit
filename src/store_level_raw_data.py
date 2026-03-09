@@ -48,12 +48,18 @@ def build_raw_data_sql(
         ROUND(COALESCE(SUM(revenue_after_cancellations_and_returns_eur_incl_forecast), 0), 2) AS total_revenue,
         ROUND(COALESCE(SUM(CASE WHEN article_price_red_eur IS NOT NULL THEN revenue_after_cancellations_and_returns_eur_incl_forecast END), 0), 2) AS total_RP_revenue,
         ROUND(COALESCE(SUM(CASE WHEN has_promotion THEN revenue_after_cancellations_and_returns_eur_incl_forecast END), 0), 2) AS total_promo_revenue,
-        ROUND(COALESCE(SUM(quantity_ordered_after_cancellations_and_returns_incl_forecast), 0), 2) AS total_quantity,
         ROUND(COALESCE(SUM(CASE WHEN insider_customer_type = 'EXISTING' THEN revenue_after_cancellations_and_returns_eur_incl_forecast END), 0), 2) AS total_existing_revenue,
+
+        ROUND(COALESCE(SUM(quantity_ordered_after_cancellations_and_returns_incl_forecast), 0), 2) AS total_quantity,
         ROUND(COALESCE(SUM(CASE WHEN article_price_red_eur IS NOT NULL THEN quantity_ordered_after_cancellations_and_returns_incl_forecast END), 0), 2) AS total_RP_quantity,
         ROUND(COALESCE(SUM(CASE WHEN has_promotion THEN quantity_ordered_after_cancellations_and_returns_incl_forecast END), 0), 2) AS total_promo_quantity,
+        ROUND(COALESCE(SUM(CASE WHEN insider_customer_type = 'EXISTING' THEN quantity_ordered_after_cancellations_and_returns_incl_forecast END), 0), 2) AS total_existing_quantity,
+
         ROUND(COALESCE(SUM(profit_contribution_1_eur_incl_forecast), 0), 2) AS total_PC1,
-        ROUND(COALESCE(SUM(CASE WHEN article_price_red_eur IS NOT NULL THEN profit_contribution_1_eur_incl_forecast END), 0), 2) AS total_RP_PC1
+        ROUND(COALESCE(SUM(CASE WHEN article_price_red_eur IS NOT NULL THEN profit_contribution_1_eur_incl_forecast END), 0), 2) AS total_RP_PC1,
+        ROUND(COALESCE(SUM(CASE WHEN has_promotion THEN profit_contribution_1_eur_incl_forecast END), 0), 2) AS total_promo_PC1,
+        ROUND(COALESCE(SUM(CASE WHEN insider_customer_type = 'EXISTING' THEN profit_contribution_1_eur_incl_forecast END), 0), 2) AS total_existing_PC1
+
       FROM `{order_table}` AS multichannel_orders
       LEFT JOIN UNNEST(multichannel_orders.order_items) AS multichannel_orders__order_items
       WHERE multichannel_orders.channel = @order_channel
@@ -69,12 +75,16 @@ def build_raw_data_sql(
         total_revenue,
         total_RP_revenue,
         total_promo_revenue,
-        total_quantity,
         total_existing_revenue,
+        total_quantity,
+        total_existing_quantity,
         total_RP_quantity,
         total_promo_quantity,
         total_PC1,
-        total_RP_PC1
+        total_existing_PC1,
+        total_RP_PC1,
+        total_promo_PC1
+
       FROM traffic_date
       LEFT JOIN store_level_mco_data
         ON traffic_date.ordered_date = store_level_mco_data.ordered_date
