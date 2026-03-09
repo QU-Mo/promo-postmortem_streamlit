@@ -804,10 +804,7 @@ if st.session_state.get("group_tables"):
     
 
     selected_groups = [selected_control_group, selected_testing_group]
-    chart_show_group_a = st.toggle(f"Charts series: show {selected_control_group}", value=True)
-    chart_show_group_b = st.toggle(f"Charts series: show {selected_testing_group}", value=True)
-    chart_show_both_groups = st.toggle("Charts series: show both groups", value=True)
-
+    
     control_table_col, _, testing_table_col = st.columns([5, 1, 5])
     with control_table_col:
         control_df = funnel_tables.get(selected_control_group, pd.DataFrame())
@@ -847,6 +844,10 @@ if st.session_state.get("group_tables"):
     
 
     st.write("Charts - All Funnel KPIs (Promo vs Baseline By Weekday)")
+    chart_show_group_a = st.toggle(f"Charts series: show {selected_control_group}", value=True)
+    chart_show_group_b = st.toggle(f"Charts series: show {selected_testing_group}", value=True)
+    chart_show_both_groups = st.toggle("Charts series: show both groups", value=True)
+
     show_all_funnel_kpi_charts = st.toggle(
         "show_all_funnel_kpi_promo_vs_baseline",
         value=False,
