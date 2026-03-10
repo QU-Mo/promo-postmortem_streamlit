@@ -546,6 +546,70 @@ def build_selected_categories_existing_non_existing_pc1_waterfall_table(
     )
 
 
+def build_selected_categories_dimension_waterfall_table(
+    group_df: pd.DataFrame,
+    baseline_dates: list[date],
+    promo_dates: list[date],
+    metric_col: str,
+    dimension_col: str,
+    selected_dimensions: list[str] | None = None,
+    metric_label: str = "revenue",
+) -> pd.DataFrame:
+    if group_df.empty:
+        return pd.DataFrame()
+
+    working_df = group_df.copy()
+    working_df["ordered_date"] = pd.to_datetime(working_df["ordered_date"]).dt.date
+    working_df[metric_col] = pd.to_numeric(working_df[metric_col], errors="coerce")
+    working_df[dimension_col] = working_df[dimension_col].fillna("UNKNOWN").astype(str)
+
+    baseline_df = working_df[working_df["ordered_date"].isin(baseline_dates)]
+    promo_df = working_df[working_df["ordered_date"].isin(promo_dates)]
+
+    baseline_total = baseline_df[metric_col].sum(min_count=1)
+    promo_total = promo_df[metric_col].sum(min_count=1)
+
+    baseline_by_dim = baseline_df.groupby(dimension_col)[metric_col].sum(min_count=1)
+    promo_by_dim = promo_df.groupby(dimension_col)[metric_col].sum(min_count=1)
+    delta_by_dim = (promo_by_dim - baseline_by_dim).fillna(0.0)
+
+    selected_dimensions = [str(v) for v in (selected_dimensions or []) if str(v)]
+    if selected_dimensions:
+        delta_by_dim = delta_by_dim.reindex(selected_dimensions).fillna(0.0)
+
+    if delta_by_dim.empty:
+        return pd.DataFrame(
+            [
+                {"Step": f"Baseline {metric_label}", "Value": baseline_total, "Type": "total"},
+                {"Step": f"Promo period {metric_label}", "Value": promo_total, "Type": "total"},
+            ]
+        )
+
+    if selected_dimensions and len(selected_dimensions) < 6:
+        displayed_delta = delta_by_dim.sort_values(ascending=False)
+        other_value = 0.0
+    else:
+        top_positive = delta_by_dim[delta_by_dim > 0].sort_values(ascending=False).head(3)
+        top_negative = delta_by_dim[delta_by_dim < 0].sort_values(ascending=True).head(3)
+        chosen_dims = list(dict.fromkeys(top_positive.index.tolist() + top_negative.index.tolist()))
+        displayed_delta = delta_by_dim.reindex(chosen_dims)
+        other_value = float(delta_by_dim.sum() - displayed_delta.sum())
+
+    waterfall_rows = [{"Step": f"Baseline {metric_label}", "Value": baseline_total, "Type": "total"}]
+    for dim_name, delta_value in displayed_delta.items():
+        waterfall_rows.append(
+            {
+                "Step": f"{dim_name} {metric_label} change",
+                "Value": float(delta_value),
+                "Type": "delta",
+            }
+        )
+
+    if other_value != 0:
+        waterfall_rows.append({"Step": f"Other {metric_label} change", "Value": other_value, "Type": "delta"})
+
+    waterfall_rows.append({"Step": f"Promo period {metric_label}", "Value": promo_total, "Type": "total"})
+    return pd.DataFrame(waterfall_rows)
 
 
 def build_article_category_filter_options_sql(

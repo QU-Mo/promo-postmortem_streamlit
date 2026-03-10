@@ -13,6 +13,7 @@ from store_level_raw_data import (
     fetch_store_code_options,
 )
 from promo_article_section_level_raw_data import (
+    build_selected_categories_dimension_waterfall_table,
     build_selected_categories_existing_non_existing_pc1_waterfall_table,
     build_selected_categories_existing_non_existing_quantity_waterfall_table,
     build_selected_categories_existing_non_existing_waterfall_table,
@@ -1129,6 +1130,147 @@ if st.session_state.get("category_group_tables"):
         baseline_dates=baseline_dates,
         promo_dates=promo_dates,
     )
+
+
+    article_section_group_toggle = st.toggle(
+        "Waterfall - Selected Catrgories (article section group)",
+        value=False,
+    )
+    if article_section_group_toggle:
+        group_control_revenue_waterfall = build_selected_categories_dimension_waterfall_table(
+            group_df=st.session_state["category_group_tables"].get(selected_control_group, pd.DataFrame()),
+            baseline_dates=baseline_dates,
+            promo_dates=promo_dates,
+            metric_col="total_revenue",
+            dimension_col="article_section_group",
+            selected_dimensions=article_section_groups,
+            metric_label="revenue",
+        )
+        group_testing_revenue_waterfall = build_selected_categories_dimension_waterfall_table(
+            group_df=st.session_state["category_group_tables"].get(selected_testing_group, pd.DataFrame()),
+            baseline_dates=baseline_dates,
+            promo_dates=promo_dates,
+            metric_col="total_revenue",
+            dimension_col="article_section_group",
+            selected_dimensions=article_section_groups,
+            metric_label="revenue",
+        )
+        st.markdown("**Waterfall - Selected Catrgories (article section group) Revenue Bridge**")
+        _render_waterfall_pair(group_control_revenue_waterfall, group_testing_revenue_waterfall, "Revenue")
+
+        group_control_quantity_waterfall = build_selected_categories_dimension_waterfall_table(
+            group_df=st.session_state["category_group_tables"].get(selected_control_group, pd.DataFrame()),
+            baseline_dates=baseline_dates,
+            promo_dates=promo_dates,
+            metric_col="total_quantity",
+            dimension_col="article_section_group",
+            selected_dimensions=article_section_groups,
+            metric_label="quantity",
+        )
+        group_testing_quantity_waterfall = build_selected_categories_dimension_waterfall_table(
+            group_df=st.session_state["category_group_tables"].get(selected_testing_group, pd.DataFrame()),
+            baseline_dates=baseline_dates,
+            promo_dates=promo_dates,
+            metric_col="total_quantity",
+            dimension_col="article_section_group",
+            selected_dimensions=article_section_groups,
+            metric_label="quantity",
+        )
+        st.markdown("**Waterfall - Selected Catrgories (article section group) Quantity Bridge**")
+        _render_waterfall_pair(group_control_quantity_waterfall, group_testing_quantity_waterfall, "Quantity")
+
+        group_control_pc1_waterfall = build_selected_categories_dimension_waterfall_table(
+            group_df=st.session_state["category_group_tables"].get(selected_control_group, pd.DataFrame()),
+            baseline_dates=baseline_dates,
+            promo_dates=promo_dates,
+            metric_col="total_PC1",
+            dimension_col="article_section_group",
+            selected_dimensions=article_section_groups,
+            metric_label="PC1",
+        )
+        group_testing_pc1_waterfall = build_selected_categories_dimension_waterfall_table(
+            group_df=st.session_state["category_group_tables"].get(selected_testing_group, pd.DataFrame()),
+            baseline_dates=baseline_dates,
+            promo_dates=promo_dates,
+            metric_col="total_PC1",
+            dimension_col="article_section_group",
+            selected_dimensions=article_section_groups,
+            metric_label="PC1",
+        )
+        st.markdown("**Waterfall - Selected Catrgories (article section group) PC1 Bridge**")
+        _render_waterfall_pair(group_control_pc1_waterfall, group_testing_pc1_waterfall, "PC1")
+
+    article_section_toggle = st.toggle(
+        "Waterfall - Selected Catrgories (article section)",
+        value=False,
+    )
+    if article_section_toggle:
+        section_control_revenue_waterfall = build_selected_categories_dimension_waterfall_table(
+            group_df=st.session_state["category_group_tables"].get(selected_control_group, pd.DataFrame()),
+            baseline_dates=baseline_dates,
+            promo_dates=promo_dates,
+            metric_col="total_revenue",
+            dimension_col="article_section",
+            selected_dimensions=article_sections,
+            metric_label="revenue",
+        )
+        section_testing_revenue_waterfall = build_selected_categories_dimension_waterfall_table(
+            group_df=st.session_state["category_group_tables"].get(selected_testing_group, pd.DataFrame()),
+            baseline_dates=baseline_dates,
+            promo_dates=promo_dates,
+            metric_col="total_revenue",
+            dimension_col="article_section",
+            selected_dimensions=article_sections,
+            metric_label="revenue",
+        )
+        st.markdown("**Waterfall - Selected Catrgories (article section) Revenue Bridge**")
+        _render_waterfall_pair(section_control_revenue_waterfall, section_testing_revenue_waterfall, "Revenue")
+
+        section_control_quantity_waterfall = build_selected_categories_dimension_waterfall_table(
+            group_df=st.session_state["category_group_tables"].get(selected_control_group, pd.DataFrame()),
+            baseline_dates=baseline_dates,
+            promo_dates=promo_dates,
+            metric_col="total_quantity",
+            dimension_col="article_section",
+            selected_dimensions=article_sections,
+            metric_label="quantity",
+        )
+        section_testing_quantity_waterfall = build_selected_categories_dimension_waterfall_table(
+            group_df=st.session_state["category_group_tables"].get(selected_testing_group, pd.DataFrame()),
+            baseline_dates=baseline_dates,
+            promo_dates=promo_dates,
+            metric_col="total_quantity",
+            dimension_col="article_section",
+            selected_dimensions=article_sections,
+            metric_label="quantity",
+        )
+        st.markdown("**Waterfall - Selected Catrgories (article section) Quantity Bridge**")
+        _render_waterfall_pair(section_control_quantity_waterfall, section_testing_quantity_waterfall, "Quantity")
+
+        section_control_pc1_waterfall = build_selected_categories_dimension_waterfall_table(
+            group_df=st.session_state["category_group_tables"].get(selected_control_group, pd.DataFrame()),
+            baseline_dates=baseline_dates,
+            promo_dates=promo_dates,
+            metric_col="total_PC1",
+            dimension_col="article_section",
+            selected_dimensions=article_sections,
+            metric_label="PC1",
+        )
+        section_testing_pc1_waterfall = build_selected_categories_dimension_waterfall_table(
+            group_df=st.session_state["category_group_tables"].get(selected_testing_group, pd.DataFrame()),
+            baseline_dates=baseline_dates,
+            promo_dates=promo_dates,
+            metric_col="total_PC1",
+            dimension_col="article_section",
+            selected_dimensions=article_sections,
+            metric_label="PC1",
+        )
+        st.markdown("**Waterfall - Selected Catrgories (article section) PC1 Bridge**")
+        _render_waterfall_pair(section_control_pc1_waterfall, section_testing_pc1_waterfall, "PC1")
+
+
+
+
     existing_insider_toggle = st.toggle(
         "Waterfall - Selected Categories Existing Insider vs New+Non Insider",
         value=False,
