@@ -554,6 +554,7 @@ def build_selected_categories_dimension_waterfall_table(
     dimension_col: str,
     selected_dimensions: list[str] | None = None,
     metric_label: str = "revenue",
+    show_all_threshold: int = 3,
 ) -> pd.DataFrame:
     if group_df.empty:
         return pd.DataFrame()
@@ -585,14 +586,12 @@ def build_selected_categories_dimension_waterfall_table(
             ]
         )
 
-    if selected_dimensions and len(selected_dimensions) < 6:
+    if selected_dimensions and len(selected_dimensions) >= show_all_threshold:
         displayed_delta = delta_by_dim.sort_values(ascending=False)
         other_value = 0.0
     else:
         top_positive = delta_by_dim[delta_by_dim > 0].sort_values(ascending=False).head(3)
-        top_negative = delta_by_dim[delta_by_dim < 0].sort_values(ascending=True).head(3)
-        chosen_dims = list(dict.fromkeys(top_positive.index.tolist() + top_negative.index.tolist()))
-        displayed_delta = delta_by_dim.reindex(chosen_dims)
+        displayed_delta = delta_by_dim.reindex(top_positive.index.tolist())
         other_value = float(delta_by_dim.sum() - displayed_delta.sum())
 
     waterfall_rows = [{"Step": f"Baseline {metric_label}", "Value": baseline_total, "Type": "total"}]
