@@ -598,14 +598,14 @@ def build_selected_categories_dimension_waterfall_table(
     for dim_name, delta_value in displayed_delta.items():
         waterfall_rows.append(
             {
-                "Step": f"{dim_name} {metric_label} change",
+                "Step": f"{dim_name}",
                 "Value": float(delta_value),
                 "Type": "delta",
             }
         )
 
     if other_value != 0:
-        waterfall_rows.append({"Step": f"Other {metric_label} change", "Value": other_value, "Type": "delta"})
+        waterfall_rows.append({"Step": "Other", "Value": other_value, "Type": "delta"})
 
     waterfall_rows.append({"Step": f"Promo period {metric_label}", "Value": promo_total, "Type": "total"})
     return pd.DataFrame(waterfall_rows)
