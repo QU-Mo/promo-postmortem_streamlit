@@ -586,7 +586,7 @@ def build_selected_categories_dimension_waterfall_table(
             ]
         )
 
-    if selected_dimensions and len(selected_dimensions) >= show_all_threshold:
+    if selected_dimensions and len(selected_dimensions) <= show_all_threshold:
         displayed_delta = delta_by_dim.sort_values(ascending=False)
         other_value = 0.0
     else:
