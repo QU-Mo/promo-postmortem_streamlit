@@ -981,9 +981,9 @@ if st.session_state.get("category_group_tables"):
     with category_testing_col:
         st.markdown(f"**{_group_label(selected_testing_group)}**")
         st.dataframe(
-            format_funnel_table(category_control_table),
+            format_funnel_table(category_testing_table),
             width='stretch',
-            height=dataframe_height(category_control_table),
+            height=dataframe_height(category_testing_table),
         )
 
     category_promo_impact = build_promo_impact_table(
