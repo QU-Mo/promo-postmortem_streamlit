@@ -18,7 +18,7 @@ def build_raw_data_sql(
 ) -> tuple[str, list]:
     """Returns SQL query string and parameters for the raw-data funnel table."""
     sql = f"""
-    WITH traffic_date AS (
+    WITH traffic_data AS (
       SELECT
         DATE(visited_on) AS ordered_date,
         country,
@@ -58,7 +58,12 @@ def build_raw_data_sql(
         ROUND(COALESCE(SUM(profit_contribution_1_eur_incl_forecast), 0), 2) AS total_PC1,
         ROUND(COALESCE(SUM(CASE WHEN article_price_red_eur IS NOT NULL THEN profit_contribution_1_eur_incl_forecast END), 0), 2) AS total_RP_PC1,
         ROUND(COALESCE(SUM(CASE WHEN has_promotion THEN profit_contribution_1_eur_incl_forecast END), 0), 2) AS total_promo_PC1,
-        ROUND(COALESCE(SUM(CASE WHEN insider_customer_type = 'EXISTING' THEN profit_contribution_1_eur_incl_forecast END), 0), 2) AS total_existing_PC1
+        ROUND(COALESCE(SUM(CASE WHEN insider_customer_type = 'EXISTING' THEN profit_contribution_1_eur_incl_forecast END), 0), 2) AS total_existing_PC1,
+
+        ROUND (SUM(article_price_black_eur * quantity_ordered_after_cancellations_and_returns_incl_forecast),2) AS total_full_price_revenue,
+        ROUND(SUM(article_cost_eur * quantity_ordered_after_cancellations_and_returns_incl_forecast),2) AS total_cost,
+        ROUND(SUM((article_price_black_eur-article_price_red_eur) * quantity_ordered_after_cancellations_and_returns_incl_forecast),2) AS total_RP_discount_euro,
+        ROUND (SUM(promotion_discount_eur * quantity_ordered_after_cancellations_and_returns_incl_forecast),2) AS total_promo_discount_euro
 
       FROM `{order_table}` AS multichannel_orders
       LEFT JOIN UNNEST(multichannel_orders.order_items) AS multichannel_orders__order_items
@@ -70,7 +75,7 @@ def build_raw_data_sql(
     ),
     stationary_funnel_combi AS (
       SELECT
-        traffic_date.*,
+        traffic_data.*,
         channel,
         total_revenue,
         total_RP_revenue,
@@ -83,15 +88,19 @@ def build_raw_data_sql(
         total_PC1,
         total_existing_PC1,
         total_RP_PC1,
-        total_promo_PC1
+        total_promo_PC1,
+        total_full_price_revenue,
+        total_cost,
+        total_RP_discount_euro,
+        total_promo_discount_euro
 
-      FROM traffic_date
+      FROM traffic_data
       LEFT JOIN store_level_mco_data
-        ON traffic_date.ordered_date = store_level_mco_data.ordered_date
-        AND traffic_date.country = store_level_mco_data.country
-        AND SPLIT(traffic_date.business_unit, ' ')[OFFSET(0)] = store_level_mco_data.company_name_short
-        AND traffic_date.store_code = store_level_mco_data.store_code
-        AND traffic_date.store_name = store_level_mco_data.store_name
+        ON traffic_data.ordered_date = store_level_mco_data.ordered_date
+        AND traffic_data.country = store_level_mco_data.country
+        AND SPLIT(traffic_data.business_unit, ' ')[OFFSET(0)] = store_level_mco_data.company_name_short
+        AND traffic_data.store_code = store_level_mco_data.store_code
+        AND traffic_data.store_name = store_level_mco_data.store_name
     )
     SELECT
       ordered_date,
@@ -116,7 +125,12 @@ def build_raw_data_sql(
       total_PC1,
       total_RP_PC1,
       total_promo_PC1,
-      total_existing_PC1
+      total_existing_PC1,
+      total_full_price_revenue,
+      total_cost,
+      total_RP_discount_euro,
+      total_promo_discount_euro
+
     FROM stationary_funnel_combi
     """
 
@@ -255,6 +269,91 @@ def fetch_store_code_options(
     if store_code_df.empty:
         return []
     return store_code_df["store_code"].astype(str).str.zfill(4).tolist()
+
+
+def build_store_level_discount_breakdown_table(
+    subset_tables: dict[str, pd.DataFrame],
+    group_name: str,
+    vat: float,
+    include_sunday: bool = False,
+) -> pd.DataFrame:
+    """Build an explanatory bridge table to break down red-price and promo discount differences."""
+
+    def _safe_div(numerator: float, denominator: float) -> float:
+        return float(numerator) / float(denominator) if denominator else 0.0
+
+    def _sum_raw_values(period_name: str) -> dict[str, float]:
+        period_key = f"{group_name} - {period_name}"
+        df = subset_tables.get(period_key, pd.DataFrame()).copy()
+        if df.empty:
+            return {
+                "total_quantity": 0.0,
+                "total_full_price_revenue": 0.0,
+                "total_cost": 0.0,
+                "total_rp_discount": 0.0,
+                "total_promo_discount": 0.0,
+            }
+
+        if not include_sunday and "weekday" in df.columns:
+            df = df[df["weekday"] != "Sunday"].copy()
+
+        return {
+            "total_quantity": float(df["total_quantity"].fillna(0).sum()) if "total_quantity" in df.columns else 0.0,
+            "total_full_price_revenue": float(df["total_full_price_revenue"].fillna(0).sum()) if "total_full_price_revenue" in df.columns else 0.0,
+            "total_cost": float(df["total_cost"].fillna(0).sum()) if "total_cost" in df.columns else 0.0,
+            "total_rp_discount": float(df["total_RP_discount_euro"].fillna(0).sum()) if "total_RP_discount_euro" in df.columns else 0.0,
+            "total_promo_discount": float(df["total_promo_discount_euro"].fillna(0).sum()) if "total_promo_discount_euro" in df.columns else 0.0,
+        }
+
+    def _derive_metrics(raw_values: dict[str, float]) -> dict[str, float]:
+        total_quantity = raw_values["total_quantity"]
+        total_full_price_revenue = raw_values["total_full_price_revenue"]
+        total_cost = raw_values["total_cost"]
+        total_rp_discount = raw_values["total_rp_discount"]
+        total_promo_discount = raw_values["total_promo_discount"]
+
+        total_full_price_pc1_eur = _safe_div(total_full_price_revenue, vat) - total_cost
+        revenue_after_rp_discount = total_full_price_revenue - total_rp_discount
+        pc1_after_rp_discount_eur = _safe_div(revenue_after_rp_discount, vat) - total_cost
+        revenue_after_all_discounts = total_full_price_revenue - total_rp_discount - total_promo_discount
+        gross_profit_eur = _safe_div(revenue_after_all_discounts, vat) - total_cost
+
+        return {
+            "Total quantity sold": total_quantity,
+            "Black Price, EUR (before all discounts and reductions)": _safe_div(total_full_price_revenue, total_quantity),
+            "Total Full Price Revenue": total_full_price_revenue,
+            "COGs": total_cost,
+            "Total Full Price PC1 Gross Profit, %%": _safe_div(total_full_price_pc1_eur, total_full_price_revenue) * vat,
+            "Total Full Price PC1 Gross Profit Margin, EUR": total_full_price_pc1_eur,
+            "Total Red Price discount granted, EUR": total_rp_discount,
+            "PC1 Gross Profit, %% after RP discounts": _safe_div(pc1_after_rp_discount_eur, revenue_after_rp_discount) * vat,
+            "PC1 Gross Profit EUR, after RP discounts": pc1_after_rp_discount_eur,
+            "Total Promo discount granted, EUR": total_promo_discount,
+            "Gross Profit, %%": _safe_div(gross_profit_eur, revenue_after_all_discounts) * vat,
+            "Gross Profit EUR": gross_profit_eur,
+        }
+
+    baseline_metrics = _derive_metrics(_sum_raw_values("Baseline Period"))
+    promo_metrics = _derive_metrics(_sum_raw_values("Promo Period"))
+
+    rows: list[dict[str, float | str]] = []
+    for kpi, baseline_value in baseline_metrics.items():
+        promo_value = promo_metrics[kpi]
+        rows.append(
+            {
+                "KPI": kpi,
+                "Baseline Period": baseline_value,
+                "Promo Period": promo_value,
+                "% Diff (Promo vs Baseline)": _safe_div(promo_value - baseline_value, baseline_value),
+                "Abs Diff (Promo - Baseline)": promo_value - baseline_value,
+            }
+        )
+
+    return pd.DataFrame(rows)
+
+
+
+
 
 
 def build_group_period_tables(

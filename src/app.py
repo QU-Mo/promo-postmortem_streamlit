@@ -9,6 +9,7 @@ import altair as alt
 
 from store_level_raw_data import (
     build_group_period_tables,
+    build_store_level_discount_breakdown_table,
     fetch_raw_data,
     fetch_store_code_options,
 )
@@ -241,6 +242,35 @@ def format_promo_impact_table(table_df: pd.DataFrame) -> pd.DataFrame:
             axis=1,
         )
     return formatted_df
+
+def format_store_level_discount_breakdown_table(table_df: pd.DataFrame) -> pd.DataFrame:
+    if table_df.empty:
+        return table_df
+
+    formatted_df = table_df.copy()
+    percent_kpis = {
+        "Total Full Price PC1 Gross Profit, %%",
+        "PC1 Gross Profit, %% after RP discounts",
+        "Gross Profit, %%",
+    }
+
+    for col in ["Baseline Period", "Promo Period", "Abs Diff (Promo - Baseline)"]:
+        formatted_df[col] = formatted_df.apply(
+            lambda row: (
+                f"{row[col]:.2%}"
+                if row["KPI"] in percent_kpis
+                else f"{row[col]:,.0f}"
+            ),
+            axis=1,
+        )
+
+    formatted_df["% Diff (Promo vs Baseline)"] = formatted_df["% Diff (Promo vs Baseline)"].apply(
+        lambda value: f"{value:.2%}"
+    )
+    return formatted_df
+
+
+
 
 def build_store_level_export_payload(group_tables: dict[str, pd.DataFrame]) -> bytes:
     subset_tables = group_tables.get("subset_tables", {})
@@ -787,6 +817,45 @@ if st.session_state.get("group_tables"):
         "Store Level Funnel Tables - include Sunday",
         value=False,
     )
+
+    subset_tables = st.session_state["group_tables"].get("subset_tables", {})
+    store_level_discount_breakdown_control = build_store_level_discount_breakdown_table(
+        subset_tables=subset_tables,
+        group_name=selected_control_group,
+        vat=vat,
+        include_sunday=include_sunday_funnel_toggle,
+    )
+    store_level_discount_breakdown_testing = build_store_level_discount_breakdown_table(
+        subset_tables=subset_tables,
+        group_name=selected_testing_group,
+        vat=vat,
+        include_sunday=include_sunday_funnel_toggle,
+    )
+
+    discount_breakdown_title = (
+        "Store Level (All Categories) - Discount Break Down (Include Sunday)"
+        if include_sunday_funnel_toggle
+        else "Store Level (All Categories) - Discount Break Down (Exclude Sunday)"
+    )
+    st.subheader(discount_breakdown_title)
+    margin_control_col, _, margin_testing_col = st.columns([5, 1, 5])
+    with margin_control_col:
+        st.markdown(f"**{_group_label(selected_control_group)}**")
+        st.dataframe(
+            format_store_level_discount_breakdown_table(store_level_discount_breakdown_control),
+            width='stretch',
+            height=dataframe_height(store_level_discount_breakdown_control),
+        )
+
+    with margin_testing_col:
+        st.markdown(f"**{_group_label(selected_testing_group)}**")
+        st.dataframe(
+            format_store_level_discount_breakdown_table(store_level_discount_breakdown_testing),
+            width='stretch',
+            height=dataframe_height(store_level_discount_breakdown_testing),
+        )
+
+
     section_title = (
         "Store Level (All Categories) - Funnel Analysis (Include Sunday)"
         if include_sunday_funnel_toggle
