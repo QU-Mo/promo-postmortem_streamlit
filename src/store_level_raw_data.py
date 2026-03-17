@@ -18,7 +18,7 @@ def build_raw_data_sql(
 ) -> tuple[str, list]:
     """Returns SQL query string and parameters for the raw-data funnel table."""
     sql = f"""
-    WITH traffic_date AS (
+    WITH traffic_data AS (
       SELECT
         DATE(visited_on) AS ordered_date,
         country,
@@ -58,7 +58,12 @@ def build_raw_data_sql(
         ROUND(COALESCE(SUM(profit_contribution_1_eur_incl_forecast), 0), 2) AS total_PC1,
         ROUND(COALESCE(SUM(CASE WHEN article_price_red_eur IS NOT NULL THEN profit_contribution_1_eur_incl_forecast END), 0), 2) AS total_RP_PC1,
         ROUND(COALESCE(SUM(CASE WHEN has_promotion THEN profit_contribution_1_eur_incl_forecast END), 0), 2) AS total_promo_PC1,
-        ROUND(COALESCE(SUM(CASE WHEN insider_customer_type = 'EXISTING' THEN profit_contribution_1_eur_incl_forecast END), 0), 2) AS total_existing_PC1
+        ROUND(COALESCE(SUM(CASE WHEN insider_customer_type = 'EXISTING' THEN profit_contribution_1_eur_incl_forecast END), 0), 2) AS total_existing_PC1,
+
+        ROUND (SUM(article_price_black_eur * quantity_ordered_after_cancellations_and_returns_incl_forecast),2) AS total_full_price_revenue,
+        ROUND(SUM(article_cost_eur * quantity_ordered_after_cancellations_and_returns_incl_forecast),2) AS total_cost,
+        ROUND(SUM((article_price_black_eur-article_price_red_eur) * quantity_ordered_after_cancellations_and_returns_incl_forecast),2) AS total_RP_discount_euro,
+        ROUND (SUM(promotion_discount_eur * quantity_ordered_after_cancellations_and_returns_incl_forecast),2) AS total_promo_discount_euro
 
       FROM `{order_table}` AS multichannel_orders
       LEFT JOIN UNNEST(multichannel_orders.order_items) AS multichannel_orders__order_items
@@ -70,7 +75,7 @@ def build_raw_data_sql(
     ),
     stationary_funnel_combi AS (
       SELECT
-        traffic_date.*,
+        traffic_data.*,
         channel,
         total_revenue,
         total_RP_revenue,
@@ -83,15 +88,19 @@ def build_raw_data_sql(
         total_PC1,
         total_existing_PC1,
         total_RP_PC1,
-        total_promo_PC1
+        total_promo_PC1,
+        total_full_price_revenue,
+        total_cost,
+        total_RP_discount_euro,
+        total_promo_discount_euro
 
-      FROM traffic_date
+      FROM traffic_data
       LEFT JOIN store_level_mco_data
-        ON traffic_date.ordered_date = store_level_mco_data.ordered_date
-        AND traffic_date.country = store_level_mco_data.country
-        AND SPLIT(traffic_date.business_unit, ' ')[OFFSET(0)] = store_level_mco_data.company_name_short
-        AND traffic_date.store_code = store_level_mco_data.store_code
-        AND traffic_date.store_name = store_level_mco_data.store_name
+        ON traffic_data.ordered_date = store_level_mco_data.ordered_date
+        AND traffic_data.country = store_level_mco_data.country
+        AND SPLIT(traffic_data.business_unit, ' ')[OFFSET(0)] = store_level_mco_data.company_name_short
+        AND traffic_data.store_code = store_level_mco_data.store_code
+        AND traffic_data.store_name = store_level_mco_data.store_name
     )
     SELECT
       ordered_date,
@@ -116,7 +125,12 @@ def build_raw_data_sql(
       total_PC1,
       total_RP_PC1,
       total_promo_PC1,
-      total_existing_PC1
+      total_existing_PC1,
+      total_full_price_revenue,
+      total_cost,
+      total_RP_discount_euro,
+      total_promo_discount_euro
+
     FROM stationary_funnel_combi
     """
 
