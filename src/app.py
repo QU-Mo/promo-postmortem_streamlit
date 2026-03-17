@@ -256,7 +256,11 @@ def format_store_level_discount_breakdown_table(table_df: pd.DataFrame) -> pd.Da
 
     for col in ["Baseline Period", "Promo Period", "Abs Diff (Promo - Baseline)"]:
         formatted_df[col] = formatted_df.apply(
-            lambda row: f"{row[col]:.2%}" if row["KPI"] in percent_kpis else f"{row[col]:,.2f}",
+            lambda row: (
+                f"{row[col]:.2%}"
+                if row["KPI"] in percent_kpis
+                else f"{row[col]:,.0f}"
+            ),
             axis=1,
         )
 
@@ -828,7 +832,12 @@ if st.session_state.get("group_tables"):
         include_sunday=include_sunday_funnel_toggle,
     )
 
-    st.markdown("**Store Level Discount Bridge (Explains Red Price & Promo discount differences)**")
+    discount_breakdown_title = (
+        "Store Level (All Categories) - Discount Break Down (Include Sunday)"
+        if include_sunday_funnel_toggle
+        else "Store Level (All Categories) - Discount Break Down (Exclude Sunday)"
+    )
+    st.subheader(discount_breakdown_title)
     margin_control_col, _, margin_testing_col = st.columns([5, 1, 5])
     with margin_control_col:
         st.markdown(f"**{_group_label(selected_control_group)}**")
@@ -846,7 +855,7 @@ if st.session_state.get("group_tables"):
             height=dataframe_height(store_level_discount_breakdown_testing),
         )
 
-        
+
     section_title = (
         "Store Level (All Categories) - Funnel Analysis (Include Sunday)"
         if include_sunday_funnel_toggle
