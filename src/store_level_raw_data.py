@@ -472,7 +472,6 @@ def build_store_level_baseline_to_promo_pc1_bridge_table(
     )
 
     baseline_final_pc1 = baseline_metrics["Final PC1, EUR"]
-    full_price_pc1_change = promo_metrics["Total Full Price PC1, EUR"] - baseline_metrics["Total Full Price PC1, EUR"]
     rp_impact_change = (
         promo_metrics["PC1 after RP discounts, EUR"] - promo_metrics["Total Full Price PC1, EUR"]
     ) - (
@@ -488,7 +487,6 @@ def build_store_level_baseline_to_promo_pc1_bridge_table(
     return pd.DataFrame(
         [
             {"Step": "Baseline Final PC1", "Value": baseline_final_pc1, "Type": "total"},
-            {"Step": "Full Price PC1 change", "Value": full_price_pc1_change, "Type": "delta"},
             {"Step": "RP discount impact change", "Value": rp_impact_change, "Type": "delta"},
             {"Step": "Promo discount impact change", "Value": promo_impact_change, "Type": "delta"},
             {"Step": "Promo Final PC1", "Value": promo_final_pc1, "Type": "total"},
