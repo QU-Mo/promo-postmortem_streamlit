@@ -396,6 +396,39 @@ def build_store_level_discount_breakdown_table(
 
 
 
+def build_store_level_period_pc1_bridge_table(
+    subset_tables: dict[str, pd.DataFrame],
+    group_name: str,
+    period_name: str,
+    vat: float,
+    include_sunday: bool = False,
+) -> pd.DataFrame:
+    period_metrics = _derive_store_level_discount_breakdown_metrics(
+        _get_store_level_discount_breakdown_raw_values(
+            subset_tables=subset_tables,
+            group_name=group_name,
+            period_name=period_name,
+            include_sunday=include_sunday,
+        ),
+        vat=vat,
+    )
+
+    full_price_pc1 = period_metrics["Total Full Price PC1, EUR"]
+    rp_delta = period_metrics["PC1 after RP discounts, EUR"] - period_metrics["Total Full Price PC1, EUR"]
+    promo_delta = period_metrics["Final PC1, EUR"] - period_metrics["PC1 after RP discounts, EUR"]
+    final_total = period_metrics["Final PC1, EUR"]
+
+    return pd.DataFrame(
+        [
+            {"Step": "Total Full Price PC1", "Value": full_price_pc1, "Type": "total"},
+            {"Step": "RP discount impact", "Value": rp_delta, "Type": "delta"},
+            {"Step": "Promo discount impact", "Value": promo_delta, "Type": "delta"},
+            {"Step": "Final PC1", "Value": final_total, "Type": "total"},
+        ]
+    )
+
+
+
 
 def build_store_level_pc1_bridge_table(
     subset_tables: dict[str, pd.DataFrame],
@@ -403,6 +436,31 @@ def build_store_level_pc1_bridge_table(
     vat: float,
     include_sunday: bool = False,
 ) -> pd.DataFrame:
+     return build_store_level_period_pc1_bridge_table(
+        subset_tables=subset_tables,
+        group_name=group_name,
+        period_name="Promo Period",
+        vat=vat,
+        include_sunday=include_sunday,
+    )
+
+
+
+def build_store_level_baseline_to_promo_pc1_bridge_table(
+    subset_tables: dict[str, pd.DataFrame],
+    group_name: str,
+    vat: float,
+    include_sunday: bool = False,
+) -> pd.DataFrame:
+    baseline_metrics = _derive_store_level_discount_breakdown_metrics(
+        _get_store_level_discount_breakdown_raw_values(
+            subset_tables=subset_tables,
+            group_name=group_name,
+            period_name="Baseline Period",
+            include_sunday=include_sunday,
+        ),
+        vat=vat,
+    )
     promo_metrics = _derive_store_level_discount_breakdown_metrics(
         _get_store_level_discount_breakdown_raw_values(
             subset_tables=subset_tables,
@@ -413,17 +471,27 @@ def build_store_level_pc1_bridge_table(
         vat=vat,
     )
 
-    promo_full_price_pc1 = promo_metrics["Total Full Price PC1, EUR"]
-    rp_delta = promo_metrics["PC1 after RP discounts, EUR"] - promo_metrics["Total Full Price PC1, EUR"]
-    promo_delta = promo_metrics["Final PC1, EUR"] - promo_metrics["PC1 after RP discounts, EUR"]
-    final_total = promo_metrics["Final PC1, EUR"]
+    baseline_final_pc1 = baseline_metrics["Final PC1, EUR"]
+    full_price_pc1_change = promo_metrics["Total Full Price PC1, EUR"] - baseline_metrics["Total Full Price PC1, EUR"]
+    rp_impact_change = (
+        promo_metrics["PC1 after RP discounts, EUR"] - promo_metrics["Total Full Price PC1, EUR"]
+    ) - (
+        baseline_metrics["PC1 after RP discounts, EUR"] - baseline_metrics["Total Full Price PC1, EUR"]
+    )
+    promo_impact_change = (
+        promo_metrics["Final PC1, EUR"] - promo_metrics["PC1 after RP discounts, EUR"]
+    ) - (
+        baseline_metrics["Final PC1, EUR"] - baseline_metrics["PC1 after RP discounts, EUR"]
+    )
+    promo_final_pc1 = promo_metrics["Final PC1, EUR"]
 
     return pd.DataFrame(
         [
-            {"Step": "Total Full Price PC1", "Value": promo_full_price_pc1, "Type": "total"},
-            {"Step": "PC1 after RP discounts", "Value": rp_delta, "Type": "delta"},
-            {"Step": "PC1 after Promo discounts", "Value": promo_delta, "Type": "delta"},
-            {"Step": "Final PC1", "Value": final_total, "Type": "total"},
+            {"Step": "Baseline Final PC1", "Value": baseline_final_pc1, "Type": "total"},
+            {"Step": "Full Price PC1 change", "Value": full_price_pc1_change, "Type": "delta"},
+            {"Step": "RP discount impact change", "Value": rp_impact_change, "Type": "delta"},
+            {"Step": "Promo discount impact change", "Value": promo_impact_change, "Type": "delta"},
+            {"Step": "Promo Final PC1", "Value": promo_final_pc1, "Type": "total"},
         ]
     )
 

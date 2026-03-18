@@ -9,8 +9,10 @@ import altair as alt
 
 from store_level_raw_data import (
     build_group_period_tables,
+    build_store_level_baseline_to_promo_pc1_bridge_table,
     build_store_level_discount_breakdown_table,
     build_store_level_pc1_bridge_table,
+    build_store_level_period_pc1_bridge_table,
     fetch_raw_data,
     fetch_store_code_options,
 )
@@ -833,13 +835,39 @@ if st.session_state.get("group_tables"):
         include_sunday=include_sunday_funnel_toggle,
     )
 
-    store_level_pc1_bridge_control = build_store_level_pc1_bridge_table(
+    baseline_period_pc1_bridge_control = build_store_level_period_pc1_bridge_table(
+        subset_tables=subset_tables,
+        group_name=selected_control_group,
+        period_name="Baseline Period",
+        vat=vat,
+        include_sunday=include_sunday_funnel_toggle,
+    )
+    baseline_period_pc1_bridge_testing = build_store_level_period_pc1_bridge_table(
+        subset_tables=subset_tables,
+        group_name=selected_testing_group,
+        period_name="Baseline Period",
+        vat=vat,
+        include_sunday=include_sunday_funnel_toggle,
+    )
+    promo_period_pc1_bridge_control = build_store_level_pc1_bridge_table(
         subset_tables=subset_tables,
         group_name=selected_control_group,
         vat=vat,
         include_sunday=include_sunday_funnel_toggle,
     )
-    store_level_pc1_bridge_testing = build_store_level_pc1_bridge_table(
+    promo_period_pc1_bridge_testing = build_store_level_pc1_bridge_table(
+        subset_tables=subset_tables,
+        group_name=selected_testing_group,
+        vat=vat,
+        include_sunday=include_sunday_funnel_toggle,
+    )
+    baseline_to_promo_pc1_bridge_control = build_store_level_baseline_to_promo_pc1_bridge_table(
+        subset_tables=subset_tables,
+        group_name=selected_control_group,
+        vat=vat,
+        include_sunday=include_sunday_funnel_toggle,
+    )
+    baseline_to_promo_pc1_bridge_testing = build_store_level_baseline_to_promo_pc1_bridge_table(
         subset_tables=subset_tables,
         group_name=selected_testing_group,
         vat=vat,
@@ -852,6 +880,37 @@ if st.session_state.get("group_tables"):
         else "Store Level (All Categories) - PC1 Bridge (Exclude Sunday)"
     )
     st.subheader(discount_breakdown_title)
+
+    def _render_store_level_pc1_bridge_pair(
+        control_waterfall_df: pd.DataFrame,
+        testing_waterfall_df: pd.DataFrame,
+        section_label: str,
+    ) -> None:
+        bridge_control_col, _, bridge_testing_col = st.columns([5, 1, 5])
+        with bridge_control_col:
+            st.markdown(f"**{_group_label(selected_control_group)}**")
+            st.altair_chart(
+                build_selected_categories_waterfall_chart(
+                    control_waterfall_df,
+                    f"{_group_label(selected_control_group)} - {section_label}",
+                    y_axis_title="PC1 (EUR)",
+                    chart_height=420,
+                ),
+                width='stretch',
+            )
+
+        with bridge_testing_col:
+            st.markdown(f"**{_group_label(selected_testing_group)}**")
+            st.altair_chart(
+                build_selected_categories_waterfall_chart(
+                    testing_waterfall_df,
+                    f"{_group_label(selected_testing_group)} - {section_label}",
+                    y_axis_title="PC1 (EUR)",
+                    chart_height=420,
+                ),
+                width='stretch',
+            )
+
     margin_control_col, _, margin_testing_col = st.columns([5, 1, 5])
     with margin_control_col:
         st.markdown(f"**{_group_label(selected_control_group)}**")
@@ -860,15 +919,7 @@ if st.session_state.get("group_tables"):
             width='stretch',
             height=dataframe_height(store_level_discount_breakdown_control),
         )
-        st.altair_chart(
-            build_selected_categories_waterfall_chart(
-                store_level_pc1_bridge_control,
-                f"{_group_label(selected_control_group)} - PC1 Bridge",
-                y_axis_title="PC1 (EUR)",
-                chart_height=420,
-            ),
-            width='stretch',
-        )
+        
 
     with margin_testing_col:
         st.markdown(f"**{_group_label(selected_testing_group)}**")
@@ -877,14 +928,37 @@ if st.session_state.get("group_tables"):
             width='stretch',
             height=dataframe_height(store_level_discount_breakdown_testing),
         )
-        st.altair_chart(
-            build_selected_categories_waterfall_chart(
-                store_level_pc1_bridge_testing,
-                f"{_group_label(selected_testing_group)} - PC1 Bridge",
-                y_axis_title="PC1 (EUR)",
-                chart_height=420,
-            ),
-            width='stretch',
+        show_baseline_period_pc1_bridge = st.toggle(
+        "Waterfall - Baseline Period PC1 Bridge",
+        value=True,
+    )
+    if show_baseline_period_pc1_bridge:
+        _render_store_level_pc1_bridge_pair(
+            baseline_period_pc1_bridge_control,
+            baseline_period_pc1_bridge_testing,
+            "Baseline Period PC1 Bridge",
+        )
+
+    show_promo_period_pc1_bridge = st.toggle(
+        "Waterfall - Promo Period PC1 Bridge",
+        value=True,
+    )
+    if show_promo_period_pc1_bridge:
+        _render_store_level_pc1_bridge_pair(
+            promo_period_pc1_bridge_control,
+            promo_period_pc1_bridge_testing,
+            "Promo Period PC1 Bridge",
+        )
+
+    show_baseline_to_promo_pc1_bridge = st.toggle(
+        "Waterfall - Baseline to Promo PC1 Bridge",
+        value=True,
+    )
+    if show_baseline_to_promo_pc1_bridge:
+        _render_store_level_pc1_bridge_pair(
+            baseline_to_promo_pc1_bridge_control,
+            baseline_to_promo_pc1_bridge_testing,
+            "Baseline to Promo PC1 Bridge",
         )
 
 
