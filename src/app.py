@@ -807,11 +807,13 @@ if st.session_state.get("group_tables") or st.session_state.get("category_group_
     with info_control_col:
         selected_control_codes = group_store_map.get(selected_control_group, [])
         st.caption(f"Selected store code(s): {', '.join(selected_control_codes) if selected_control_codes else 'None'}")
+        st.caption(f"Selected store code(s) numbers: {len(selected_control_codes)}")
         st.caption(f"Baseline period: {format_date_list(baseline_dates)}")
         st.caption(f"Promo period: {format_date_list(promo_dates)}")
     with info_testing_col:
         selected_testing_codes = group_store_map.get(selected_testing_group, [])
         st.caption(f"Selected store code(s): {', '.join(selected_testing_codes) if selected_testing_codes else 'None'}")
+        st.caption(f"Selected store code(s) numbers: {len(selected_testing_codes)}")
         st.caption(f"Baseline period: {format_date_list(baseline_dates)}")
         st.caption(f"Promo period: {format_date_list(promo_dates)}")
 
@@ -928,9 +930,10 @@ if st.session_state.get("group_tables"):
             width='stretch',
             height=dataframe_height(store_level_discount_breakdown_testing),
         )
-        show_baseline_period_pc1_bridge = st.toggle(
+
+    show_baseline_period_pc1_bridge = st.toggle(
         "Waterfall - Baseline Period PC1 Bridge",
-        value=True,
+        value=False,
     )
     if show_baseline_period_pc1_bridge:
         _render_store_level_pc1_bridge_pair(
@@ -941,7 +944,7 @@ if st.session_state.get("group_tables"):
 
     show_promo_period_pc1_bridge = st.toggle(
         "Waterfall - Promo Period PC1 Bridge",
-        value=True,
+        value=False,
     )
     if show_promo_period_pc1_bridge:
         _render_store_level_pc1_bridge_pair(
@@ -952,7 +955,7 @@ if st.session_state.get("group_tables"):
 
     show_baseline_to_promo_pc1_bridge = st.toggle(
         "Waterfall - Baseline to Promo PC1 Bridge",
-        value=True,
+        value=False,
     )
     if show_baseline_to_promo_pc1_bridge:
         _render_store_level_pc1_bridge_pair(
