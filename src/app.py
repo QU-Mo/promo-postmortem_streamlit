@@ -9,7 +9,10 @@ import altair as alt
 
 from store_level_raw_data import (
     build_group_period_tables,
+    build_store_level_baseline_to_promo_pc1_bridge_table,
     build_store_level_discount_breakdown_table,
+    build_store_level_pc1_bridge_table,
+    build_store_level_period_pc1_bridge_table,
     fetch_raw_data,
     fetch_store_code_options,
 )
@@ -249,9 +252,9 @@ def format_store_level_discount_breakdown_table(table_df: pd.DataFrame) -> pd.Da
 
     formatted_df = table_df.copy()
     percent_kpis = {
-        "Total Full Price PC1 Gross Profit, %%",
-        "PC1 Gross Profit, %% after RP discounts",
-        "Gross Profit, %%",
+        "Total Full Price PC1 Margin, %%",
+        "PC1 Margin after RP discounts, %%",
+        "Final PC1 Margin, %%",
     }
 
     for col in ["Baseline Period", "Promo Period", "Abs Diff (Promo - Baseline)"]:
@@ -804,11 +807,13 @@ if st.session_state.get("group_tables") or st.session_state.get("category_group_
     with info_control_col:
         selected_control_codes = group_store_map.get(selected_control_group, [])
         st.caption(f"Selected store code(s): {', '.join(selected_control_codes) if selected_control_codes else 'None'}")
+        st.caption(f"Selected store code(s) numbers: {len(selected_control_codes)}")
         st.caption(f"Baseline period: {format_date_list(baseline_dates)}")
         st.caption(f"Promo period: {format_date_list(promo_dates)}")
     with info_testing_col:
         selected_testing_codes = group_store_map.get(selected_testing_group, [])
         st.caption(f"Selected store code(s): {', '.join(selected_testing_codes) if selected_testing_codes else 'None'}")
+        st.caption(f"Selected store code(s) numbers: {len(selected_testing_codes)}")
         st.caption(f"Baseline period: {format_date_list(baseline_dates)}")
         st.caption(f"Promo period: {format_date_list(promo_dates)}")
 
@@ -832,12 +837,82 @@ if st.session_state.get("group_tables"):
         include_sunday=include_sunday_funnel_toggle,
     )
 
+    baseline_period_pc1_bridge_control = build_store_level_period_pc1_bridge_table(
+        subset_tables=subset_tables,
+        group_name=selected_control_group,
+        period_name="Baseline Period",
+        vat=vat,
+        include_sunday=include_sunday_funnel_toggle,
+    )
+    baseline_period_pc1_bridge_testing = build_store_level_period_pc1_bridge_table(
+        subset_tables=subset_tables,
+        group_name=selected_testing_group,
+        period_name="Baseline Period",
+        vat=vat,
+        include_sunday=include_sunday_funnel_toggle,
+    )
+    promo_period_pc1_bridge_control = build_store_level_pc1_bridge_table(
+        subset_tables=subset_tables,
+        group_name=selected_control_group,
+        vat=vat,
+        include_sunday=include_sunday_funnel_toggle,
+    )
+    promo_period_pc1_bridge_testing = build_store_level_pc1_bridge_table(
+        subset_tables=subset_tables,
+        group_name=selected_testing_group,
+        vat=vat,
+        include_sunday=include_sunday_funnel_toggle,
+    )
+    baseline_to_promo_pc1_bridge_control = build_store_level_baseline_to_promo_pc1_bridge_table(
+        subset_tables=subset_tables,
+        group_name=selected_control_group,
+        vat=vat,
+        include_sunday=include_sunday_funnel_toggle,
+    )
+    baseline_to_promo_pc1_bridge_testing = build_store_level_baseline_to_promo_pc1_bridge_table(
+        subset_tables=subset_tables,
+        group_name=selected_testing_group,
+        vat=vat,
+        include_sunday=include_sunday_funnel_toggle,
+    )
+
     discount_breakdown_title = (
-        "Store Level (All Categories) - Discount Break Down (Include Sunday)"
+         "Store Level (All Categories) - PC1 Bridge (Include Sunday)"
         if include_sunday_funnel_toggle
-        else "Store Level (All Categories) - Discount Break Down (Exclude Sunday)"
+        else "Store Level (All Categories) - PC1 Bridge (Exclude Sunday)"
     )
     st.subheader(discount_breakdown_title)
+
+    def _render_store_level_pc1_bridge_pair(
+        control_waterfall_df: pd.DataFrame,
+        testing_waterfall_df: pd.DataFrame,
+        section_label: str,
+    ) -> None:
+        bridge_control_col, _, bridge_testing_col = st.columns([5, 1, 5])
+        with bridge_control_col:
+            st.markdown(f"**{_group_label(selected_control_group)}**")
+            st.altair_chart(
+                build_selected_categories_waterfall_chart(
+                    control_waterfall_df,
+                    f"{_group_label(selected_control_group)} - {section_label}",
+                    y_axis_title="PC1 (EUR)",
+                    chart_height=420,
+                ),
+                width='stretch',
+            )
+
+        with bridge_testing_col:
+            st.markdown(f"**{_group_label(selected_testing_group)}**")
+            st.altair_chart(
+                build_selected_categories_waterfall_chart(
+                    testing_waterfall_df,
+                    f"{_group_label(selected_testing_group)} - {section_label}",
+                    y_axis_title="PC1 (EUR)",
+                    chart_height=420,
+                ),
+                width='stretch',
+            )
+
     margin_control_col, _, margin_testing_col = st.columns([5, 1, 5])
     with margin_control_col:
         st.markdown(f"**{_group_label(selected_control_group)}**")
@@ -846,6 +921,7 @@ if st.session_state.get("group_tables"):
             width='stretch',
             height=dataframe_height(store_level_discount_breakdown_control),
         )
+        
 
     with margin_testing_col:
         st.markdown(f"**{_group_label(selected_testing_group)}**")
@@ -853,6 +929,39 @@ if st.session_state.get("group_tables"):
             format_store_level_discount_breakdown_table(store_level_discount_breakdown_testing),
             width='stretch',
             height=dataframe_height(store_level_discount_breakdown_testing),
+        )
+
+    show_baseline_period_pc1_bridge = st.toggle(
+        "Waterfall - Baseline Period PC1 Bridge",
+        value=False,
+    )
+    if show_baseline_period_pc1_bridge:
+        _render_store_level_pc1_bridge_pair(
+            baseline_period_pc1_bridge_control,
+            baseline_period_pc1_bridge_testing,
+            "Baseline Period PC1 Bridge",
+        )
+
+    show_promo_period_pc1_bridge = st.toggle(
+        "Waterfall - Promo Period PC1 Bridge",
+        value=False,
+    )
+    if show_promo_period_pc1_bridge:
+        _render_store_level_pc1_bridge_pair(
+            promo_period_pc1_bridge_control,
+            promo_period_pc1_bridge_testing,
+            "Promo Period PC1 Bridge",
+        )
+
+    show_baseline_to_promo_pc1_bridge = st.toggle(
+        "Waterfall - Baseline to Promo PC1 Bridge",
+        value=False,
+    )
+    if show_baseline_to_promo_pc1_bridge:
+        _render_store_level_pc1_bridge_pair(
+            baseline_to_promo_pc1_bridge_control,
+            baseline_to_promo_pc1_bridge_testing,
+            "Baseline to Promo PC1 Bridge",
         )
 
 
@@ -880,6 +989,8 @@ if st.session_state.get("group_tables"):
         control_df = funnel_tables.get(selected_control_group, pd.DataFrame())
         
         st.markdown(f"**{_group_label(selected_control_group)}**")
+        if control_df.attrs.get("pedestrian_footfall_label"):
+            st.caption(control_df.attrs["pedestrian_footfall_label"])
         st.dataframe(
             format_funnel_table(control_df),
             width='stretch',
@@ -890,6 +1001,8 @@ if st.session_state.get("group_tables"):
         testing_df = funnel_tables.get(selected_testing_group, pd.DataFrame())
         
         st.markdown(f"**{_group_label(selected_testing_group)}**")
+        if testing_df.attrs.get("pedestrian_footfall_label"):
+            st.caption(testing_df.attrs["pedestrian_footfall_label"])
         st.dataframe(
             format_funnel_table(testing_df),
             width='stretch',

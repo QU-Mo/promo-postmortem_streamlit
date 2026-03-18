@@ -271,6 +271,69 @@ def fetch_store_code_options(
     return store_code_df["store_code"].astype(str).str.zfill(4).tolist()
 
 
+def _safe_div(numerator: float, denominator: float) -> float:
+    return float(numerator) / float(denominator) if denominator else 0.0
+
+
+
+def _get_store_level_discount_breakdown_raw_values(
+    subset_tables: dict[str, pd.DataFrame],
+    group_name: str,
+    period_name: str,
+    include_sunday: bool = False,
+) -> dict[str, float]:
+    period_key = f"{group_name} - {period_name}"
+    df = subset_tables.get(period_key, pd.DataFrame()).copy()
+    if df.empty:
+        return {
+            "total_quantity": 0.0,
+            "total_full_price_revenue": 0.0,
+            "total_cost": 0.0,
+            "total_rp_discount": 0.0,
+            "total_promo_discount": 0.0,
+        }
+
+    if not include_sunday and "weekday" in df.columns:
+        df = df[df["weekday"] != "Sunday"].copy()
+
+    return {
+        "total_quantity": float(df["total_quantity"].fillna(0).sum()) if "total_quantity" in df.columns else 0.0,
+        "total_full_price_revenue": float(df["total_full_price_revenue"].fillna(0).sum()) if "total_full_price_revenue" in df.columns else 0.0,
+        "total_cost": float(df["total_cost"].fillna(0).sum()) if "total_cost" in df.columns else 0.0,
+        "total_rp_discount": float(df["total_RP_discount_euro"].fillna(0).sum()) if "total_RP_discount_euro" in df.columns else 0.0,
+        "total_promo_discount": float(df["total_promo_discount_euro"].fillna(0).sum()) if "total_promo_discount_euro" in df.columns else 0.0,
+    }
+
+def _derive_store_level_discount_breakdown_metrics(raw_values: dict[str, float], vat: float) -> dict[str, float]:
+    total_quantity = raw_values["total_quantity"]
+    total_full_price_revenue = raw_values["total_full_price_revenue"]
+    total_cost = raw_values["total_cost"]
+    total_rp_discount = raw_values["total_rp_discount"]
+    total_promo_discount = raw_values["total_promo_discount"]
+
+    total_full_price_pc1_eur = _safe_div(total_full_price_revenue, vat) - total_cost
+    revenue_after_rp_discount = total_full_price_revenue - total_rp_discount
+    pc1_after_rp_discount_eur = _safe_div(revenue_after_rp_discount, vat) - total_cost
+    revenue_after_all_discounts = total_full_price_revenue - total_rp_discount - total_promo_discount
+    final_pc1_eur = _safe_div(revenue_after_all_discounts, vat) - total_cost
+    pc1_after_promo_discount_eur = final_pc1_eur - pc1_after_rp_discount_eur
+
+    return {
+        "Total quantity sold": total_quantity,
+        "Black Price, EUR (before all discounts and reductions)": _safe_div(total_full_price_revenue, total_quantity),
+        "Total Full Price Revenue": total_full_price_revenue,
+        "COGs": total_cost,
+        "Total Full Price PC1 Margin, %%": _safe_div(total_full_price_pc1_eur, total_full_price_revenue) * vat,
+        "Total Full Price PC1, EUR": total_full_price_pc1_eur,
+        "Total Red Price discount granted, EUR": total_rp_discount,
+        "PC1 Margin after RP discounts, %%": _safe_div(pc1_after_rp_discount_eur, revenue_after_rp_discount) * vat,
+        "PC1 after RP discounts, EUR": pc1_after_rp_discount_eur,
+        "Total Promo discount granted, EUR": total_promo_discount,
+        "Final PC1 Margin, %%": _safe_div(final_pc1_eur, revenue_after_all_discounts) * vat,
+        "Final PC1, EUR": final_pc1_eur,
+        "PC1 after Promo discounts, EUR": pc1_after_promo_discount_eur,
+    }
+
 def build_store_level_discount_breakdown_table(
     subset_tables: dict[str, pd.DataFrame],
     group_name: str,
@@ -279,65 +342,45 @@ def build_store_level_discount_breakdown_table(
 ) -> pd.DataFrame:
     """Build an explanatory bridge table to break down red-price and promo discount differences."""
 
-    def _safe_div(numerator: float, denominator: float) -> float:
-        return float(numerator) / float(denominator) if denominator else 0.0
+    baseline_metrics = _derive_store_level_discount_breakdown_metrics(
+        _get_store_level_discount_breakdown_raw_values(
+            subset_tables=subset_tables,
+            group_name=group_name,
+            period_name="Baseline Period",
+            include_sunday=include_sunday,
+        ),
+        vat=vat,
+    )
+    promo_metrics = _derive_store_level_discount_breakdown_metrics(
+        _get_store_level_discount_breakdown_raw_values(
+            subset_tables=subset_tables,
+            group_name=group_name,
+            period_name="Promo Period",
+            include_sunday=include_sunday,
+        ),
+        vat=vat,
+    )
 
-    def _sum_raw_values(period_name: str) -> dict[str, float]:
-        period_key = f"{group_name} - {period_name}"
-        df = subset_tables.get(period_key, pd.DataFrame()).copy()
-        if df.empty:
-            return {
-                "total_quantity": 0.0,
-                "total_full_price_revenue": 0.0,
-                "total_cost": 0.0,
-                "total_rp_discount": 0.0,
-                "total_promo_discount": 0.0,
-            }
+    display_metrics = [
+        "Total quantity sold",
+        "Black Price, EUR (before all discounts and reductions)",
+        "Total Full Price Revenue",
+        "COGs",
+        "Total Full Price PC1 Margin, %%",
+        "Total Full Price PC1, EUR",
+        "Total Red Price discount granted, EUR",
+        "PC1 Margin after RP discounts, %%",
+        "PC1 after RP discounts, EUR",
+        "Total Promo discount granted, EUR",
+        "Final PC1 Margin, %%",
+        "Final PC1, EUR",
+    ]
 
-        if not include_sunday and "weekday" in df.columns:
-            df = df[df["weekday"] != "Sunday"].copy()
 
-        return {
-            "total_quantity": float(df["total_quantity"].fillna(0).sum()) if "total_quantity" in df.columns else 0.0,
-            "total_full_price_revenue": float(df["total_full_price_revenue"].fillna(0).sum()) if "total_full_price_revenue" in df.columns else 0.0,
-            "total_cost": float(df["total_cost"].fillna(0).sum()) if "total_cost" in df.columns else 0.0,
-            "total_rp_discount": float(df["total_RP_discount_euro"].fillna(0).sum()) if "total_RP_discount_euro" in df.columns else 0.0,
-            "total_promo_discount": float(df["total_promo_discount_euro"].fillna(0).sum()) if "total_promo_discount_euro" in df.columns else 0.0,
-        }
-
-    def _derive_metrics(raw_values: dict[str, float]) -> dict[str, float]:
-        total_quantity = raw_values["total_quantity"]
-        total_full_price_revenue = raw_values["total_full_price_revenue"]
-        total_cost = raw_values["total_cost"]
-        total_rp_discount = raw_values["total_rp_discount"]
-        total_promo_discount = raw_values["total_promo_discount"]
-
-        total_full_price_pc1_eur = _safe_div(total_full_price_revenue, vat) - total_cost
-        revenue_after_rp_discount = total_full_price_revenue - total_rp_discount
-        pc1_after_rp_discount_eur = _safe_div(revenue_after_rp_discount, vat) - total_cost
-        revenue_after_all_discounts = total_full_price_revenue - total_rp_discount - total_promo_discount
-        gross_profit_eur = _safe_div(revenue_after_all_discounts, vat) - total_cost
-
-        return {
-            "Total quantity sold": total_quantity,
-            "Black Price, EUR (before all discounts and reductions)": _safe_div(total_full_price_revenue, total_quantity),
-            "Total Full Price Revenue": total_full_price_revenue,
-            "COGs": total_cost,
-            "Total Full Price PC1 Gross Profit, %%": _safe_div(total_full_price_pc1_eur, total_full_price_revenue) * vat,
-            "Total Full Price PC1 Gross Profit Margin, EUR": total_full_price_pc1_eur,
-            "Total Red Price discount granted, EUR": total_rp_discount,
-            "PC1 Gross Profit, %% after RP discounts": _safe_div(pc1_after_rp_discount_eur, revenue_after_rp_discount) * vat,
-            "PC1 Gross Profit EUR, after RP discounts": pc1_after_rp_discount_eur,
-            "Total Promo discount granted, EUR": total_promo_discount,
-            "Gross Profit, %%": _safe_div(gross_profit_eur, revenue_after_all_discounts) * vat,
-            "Gross Profit EUR": gross_profit_eur,
-        }
-
-    baseline_metrics = _derive_metrics(_sum_raw_values("Baseline Period"))
-    promo_metrics = _derive_metrics(_sum_raw_values("Promo Period"))
 
     rows: list[dict[str, float | str]] = []
-    for kpi, baseline_value in baseline_metrics.items():
+    for kpi in display_metrics:
+        baseline_value = baseline_metrics[kpi]
         promo_value = promo_metrics[kpi]
         rows.append(
             {
@@ -353,7 +396,102 @@ def build_store_level_discount_breakdown_table(
 
 
 
+def build_store_level_period_pc1_bridge_table(
+    subset_tables: dict[str, pd.DataFrame],
+    group_name: str,
+    period_name: str,
+    vat: float,
+    include_sunday: bool = False,
+) -> pd.DataFrame:
+    period_metrics = _derive_store_level_discount_breakdown_metrics(
+        _get_store_level_discount_breakdown_raw_values(
+            subset_tables=subset_tables,
+            group_name=group_name,
+            period_name=period_name,
+            include_sunday=include_sunday,
+        ),
+        vat=vat,
+    )
 
+    full_price_pc1 = period_metrics["Total Full Price PC1, EUR"]
+    rp_delta = period_metrics["PC1 after RP discounts, EUR"] - period_metrics["Total Full Price PC1, EUR"]
+    promo_delta = period_metrics["Final PC1, EUR"] - period_metrics["PC1 after RP discounts, EUR"]
+    final_total = period_metrics["Final PC1, EUR"]
+
+    return pd.DataFrame(
+        [
+            {"Step": "Total Full Price PC1", "Value": full_price_pc1, "Type": "total"},
+            {"Step": "RP discount impact", "Value": rp_delta, "Type": "delta"},
+            {"Step": "Promo discount impact", "Value": promo_delta, "Type": "delta"},
+            {"Step": "Final PC1", "Value": final_total, "Type": "total"},
+        ]
+    )
+
+
+
+
+def build_store_level_pc1_bridge_table(
+    subset_tables: dict[str, pd.DataFrame],
+    group_name: str,
+    vat: float,
+    include_sunday: bool = False,
+) -> pd.DataFrame:
+     return build_store_level_period_pc1_bridge_table(
+        subset_tables=subset_tables,
+        group_name=group_name,
+        period_name="Promo Period",
+        vat=vat,
+        include_sunday=include_sunday,
+    )
+
+
+
+def build_store_level_baseline_to_promo_pc1_bridge_table(
+    subset_tables: dict[str, pd.DataFrame],
+    group_name: str,
+    vat: float,
+    include_sunday: bool = False,
+) -> pd.DataFrame:
+    baseline_metrics = _derive_store_level_discount_breakdown_metrics(
+        _get_store_level_discount_breakdown_raw_values(
+            subset_tables=subset_tables,
+            group_name=group_name,
+            period_name="Baseline Period",
+            include_sunday=include_sunday,
+        ),
+        vat=vat,
+    )
+    promo_metrics = _derive_store_level_discount_breakdown_metrics(
+        _get_store_level_discount_breakdown_raw_values(
+            subset_tables=subset_tables,
+            group_name=group_name,
+            period_name="Promo Period",
+            include_sunday=include_sunday,
+        ),
+        vat=vat,
+    )
+
+    baseline_final_pc1 = baseline_metrics["Final PC1, EUR"]
+    rp_impact_change = (
+        promo_metrics["PC1 after RP discounts, EUR"] - promo_metrics["Total Full Price PC1, EUR"]
+    ) - (
+        baseline_metrics["PC1 after RP discounts, EUR"] - baseline_metrics["Total Full Price PC1, EUR"]
+    )
+    promo_impact_change = (
+        promo_metrics["Final PC1, EUR"] - promo_metrics["PC1 after RP discounts, EUR"]
+    ) - (
+        baseline_metrics["Final PC1, EUR"] - baseline_metrics["PC1 after RP discounts, EUR"]
+    )
+    promo_final_pc1 = promo_metrics["Final PC1, EUR"]
+
+    return pd.DataFrame(
+        [
+            {"Step": "Baseline Final PC1", "Value": baseline_final_pc1, "Type": "total"},
+            {"Step": "RP discount impact change", "Value": rp_impact_change, "Type": "delta"},
+            {"Step": "Promo discount impact change", "Value": promo_impact_change, "Type": "delta"},
+            {"Step": "Promo Final PC1", "Value": promo_final_pc1, "Type": "total"},
+        ]
+    )
 
 
 def build_group_period_tables(
@@ -509,16 +647,16 @@ def build_group_period_tables(
     def _funnel_table(baseline_metrics: dict[str, float], promo_metrics: dict[str, float]) -> pd.DataFrame:
         def _pct_diff(baseline: float, promo: float) -> float:
             return _safe_div((promo - baseline), baseline) if baseline else 0.0
+        
+        footfall_label = (
+            "pedestrian footfall\n"
+            f"(trackable stores #: {baseline_metrics['footfall_trackable_stores_count']} -->"
+            f"{promo_metrics['footfall_trackable_stores_count']})"
+        )
+
 
         row_defs = [
-            (
-               (
-                    "pedestrian footfall\n"
-                    f"(trackable stores #: {baseline_metrics['footfall_trackable_stores_count']} -->"
-                    f"{promo_metrics['footfall_trackable_stores_count']})"
-                ),
-                "pedestrian_footfall",
-            ),
+            ("pedestrian footfall", "pedestrian_footfall"),
             ("store absorption rate", "store_absorption_rate"),
             ("incoming visitors", "incoming_visitors"),
             ("store conversion rate", "cal_store_conversion_rate"),
@@ -559,7 +697,9 @@ def build_group_period_tables(
                     "Abs Diff (Promo - Baseline)": promo_value - baseline_value,
                 }
             )
-        return pd.DataFrame(rows)
+        funnel_df = pd.DataFrame(rows)
+        funnel_df.attrs["pedestrian_footfall_label"] = footfall_label
+        return funnel_df
 
     def _weekday_kpi_table(subset_df: pd.DataFrame) -> pd.DataFrame:
         if subset_df.empty:
