@@ -1,0 +1,44 @@
+name: schneiderflow-manifests
+
+on:
+  pull_request:
+    paths:
+      - 'kustomize/**'
+      - '.github/workflows/**'
+      - 'Dockerfile'
+      - '.streamlit/**'
+      - 'requirements.txt'
+  workflow_dispatch:
+
+jobs:
+  validate-manifests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: 'latest'
+
+      - name: Validate development manifests render
+        env:
+          IMAGE_URI: us-docker.pkg.dev/demo/project/promo-postmortem-streamlit
+          IMAGE_TAG: pr-test
+          DEV_HOST: promo-postmortem.dev.example.com
+          DEV_TLS_SECRET: promo-postmortem-dev-tls
+        run: python .github/workflows/scripts/render_kustomize.py development > /tmp/development.yaml
+
+      - name: Validate production manifests render
+        env:
+          IMAGE_URI: us-docker.pkg.dev/demo/project/promo-postmortem-streamlit
+          IMAGE_TAG: pr-test
+          PROD_HOST: promo-postmortem.example.com
+          PROD_TLS_SECRET: promo-postmortem-prd-tls
+        run: python .github/workflows/scripts/render_kustomize.py production > /tmp/production.yaml

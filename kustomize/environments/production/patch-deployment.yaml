@@ -1,0 +1,6 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: promo-postmortem-streamlit
+spec:
+  replicas: 3
