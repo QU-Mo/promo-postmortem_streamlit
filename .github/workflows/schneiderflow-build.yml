@@ -1,0 +1,141 @@
+name: schneiderflow-build
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      deploy_production:
+        description: Deploy the current main image to production
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+  GAR_LOCATION: ${{ vars.GAR_LOCATION }}
+  GAR_REPOSITORY: ${{ vars.GAR_REPOSITORY }}
+  IMAGE_NAME: promo-postmortem-streamlit
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    outputs:
+      image_uri: ${{ steps.meta.outputs.image_uri }}
+      image_tag: ${{ steps.meta.outputs.image_tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker "${GAR_LOCATION}-docker.pkg.dev" --quiet
+
+      - name: Build image metadata
+        id: meta
+        run: |
+          SHORT_SHA="${GITHUB_SHA::7}"
+          IMAGE_URI="${GAR_LOCATION}-docker.pkg.dev/${PROJECT_ID}/${GAR_REPOSITORY}/${IMAGE_NAME}"
+          IMAGE_TAG="${SHORT_SHA}"
+          echo "image_uri=${IMAGE_URI}" >> "$GITHUB_OUTPUT"
+          echo "image_tag=${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Build Docker image
+        run: docker build -t "${{ steps.meta.outputs.image_uri }}:${{ steps.meta.outputs.image_tag }}" .
+
+      - name: Push Docker image
+        run: docker push "${{ steps.meta.outputs.image_uri }}:${{ steps.meta.outputs.image_tag }}"
+
+  deploy-development:
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    environment: development
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: latest
+
+      - name: Get GKE credentials
+        uses: google-github-actions/get-gke-credentials@v2
+        with:
+          cluster_name: ${{ vars.GKE_CLUSTER_NAME }}
+          location: ${{ vars.GKE_CLUSTER_LOCATION }}
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+
+      - name: Render and apply development manifests
+        env:
+          IMAGE_URI: ${{ needs.build-and-push.outputs.image_uri }}
+          IMAGE_TAG: ${{ needs.build-and-push.outputs.image_tag }}
+          DEV_HOST: ${{ vars.DEV_HOST }}
+          DEV_TLS_SECRET: ${{ vars.DEV_TLS_SECRET }}
+        run: |
+          python .github/workflows/scripts/render_kustomize.py development > /tmp/development.yaml
+          kubectl apply -f /tmp/development.yaml
+          kubectl rollout status deployment/promo-postmortem-streamlit -n promo-postmortem-dev --timeout=180s
+
+  deploy-production:
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    if: github.event_name == 'workflow_dispatch' && inputs.deploy_production
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: latest
+
+      - name: Get GKE credentials
+        uses: google-github-actions/get-gke-credentials@v2
+        with:
+          cluster_name: ${{ vars.GKE_CLUSTER_NAME }}
+          location: ${{ vars.GKE_CLUSTER_LOCATION }}
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+
+      - name: Render and apply production manifests
+        env:
+          IMAGE_URI: ${{ needs.build-and-push.outputs.image_uri }}
+          IMAGE_TAG: ${{ needs.build-and-push.outputs.image_tag }}
+          PROD_HOST: ${{ vars.PROD_HOST }}
+          PROD_TLS_SECRET: ${{ vars.PROD_TLS_SECRET }}
+        run: |
+          python .github/workflows/scripts/render_kustomize.py production > /tmp/production.yaml
+          kubectl apply -f /tmp/production.yaml
+          kubectl rollout status deployment/promo-postmortem-streamlit -n promo-postmortem-prd --timeout=180s
