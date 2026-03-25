@@ -6,6 +6,12 @@ import pandas as pd
 import altair as alt
 
 
+from report_payload import (
+    build_phase1_summary_text,
+    build_report_payload,
+)
+
+
 
 from store_level_raw_data import (
     build_group_period_tables,
@@ -1023,6 +1029,51 @@ if st.session_state.get("group_tables"):
         width='stretch',
         height=dataframe_height(promo_impact_df),
     )
+
+
+    st.markdown("**Phase 1 - Auto Summary (MVP)**")
+    if st.button("Generate Summary Text (Phase 1)"):
+        report_payload = build_report_payload(
+            traffic_business_unit=traffic_business_unit,
+            traffic_country=traffic_country,
+            order_company_name_short=order_company_name_short,
+            order_channel=order_channel,
+            order_country=order_country,
+            baseline_dates=baseline_dates,
+            promo_dates=promo_dates,
+            selected_control_group=selected_control_group,
+            selected_testing_group=selected_testing_group,
+            group_store_map=group_store_map,
+            group_description_map=group_description_map,
+            control_df=control_df,
+            testing_df=testing_df,
+            promo_impact_df=promo_impact_df,
+        )
+        summary_text = build_phase1_summary_text(report_payload)
+
+        st.session_state["phase1_report_payload"] = report_payload
+        st.session_state["phase1_summary_text"] = summary_text
+
+    if "phase1_summary_text" in st.session_state:
+        st.text_area(
+            "Summary Text",
+            value=st.session_state["phase1_summary_text"],
+            height=360,
+        )
+        st.download_button(
+            "Download Summary (TXT)",
+            data=st.session_state["phase1_summary_text"].encode("utf-8"),
+            file_name="campaign_post_mortem_phase1_summary.txt",
+            mime="text/plain",
+        )
+
+    if "phase1_report_payload" in st.session_state:
+        st.download_button(
+            "Download Report Payload (JSON)",
+            data=json.dumps(st.session_state["phase1_report_payload"], ensure_ascii=False, indent=2).encode("utf-8"),
+            file_name="campaign_post_mortem_phase1_payload.json",
+            mime="application/json",
+        )
 
     
 
