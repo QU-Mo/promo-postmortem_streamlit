@@ -1031,8 +1031,11 @@ if st.session_state.get("group_tables"):
     )
 
 
-    st.markdown("**Phase 1 - Auto Summary (MVP)**")
-    if st.button("Generate Summary Text (Phase 1)"):
+    st.markdown("**Phase 1 - Driver Analysis Summary (Store Level Funnel)**")
+    st.caption(
+        "Phase 1 focuses on KPI drivers for each group's % Diff (Promo vs Baseline) and Promo Impact drivers between groups."
+    )
+    if st.button("Generate Driver Summary Text (Phase 1)"):
         report_payload = build_report_payload(
             traffic_business_unit=traffic_business_unit,
             traffic_country=traffic_country,
@@ -1075,7 +1078,6 @@ if st.session_state.get("group_tables"):
             mime="application/json",
         )
 
-    
 
     st.write("Charts - All Funnel KPIs (Promo vs Baseline By Weekday)")
     chart_show_group_a = st.toggle(f"Charts series: show {selected_control_group}", value=True)

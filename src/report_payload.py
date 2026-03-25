@@ -11,6 +11,8 @@ DEFAULT_PRIMARY_KPIS = (
     "total PC1",
     "margin",
 )
+PROMO_VS_BASELINE_COL = "% Diff (Promo vs Baseline)"
+PROMO_IMPACT_COL = "Promo Impact (Group A %Diff - Group B %Diff )"
 
 
 def _safe_float(value: Any) -> float | None:
@@ -95,6 +97,49 @@ def compute_ab_winner(
     }
 
 
+def extract_kpi_drivers(
+    table_df: pd.DataFrame,
+    *,
+    value_col: str,
+    top_n: int = 5,
+    min_abs_value: float = 0.0,
+) -> dict[str, list[dict[str, float]]]:
+    """Extract top KPI drivers from a KPI table column."""
+    if table_df.empty or "KPI" not in table_df.columns or value_col not in table_df.columns:
+        return {"top_positive": [], "top_negative": [], "top_absolute": []}
+
+    working_df = table_df[["KPI", value_col]].copy()
+    working_df[value_col] = pd.to_numeric(working_df[value_col], errors="coerce")
+    working_df = working_df.dropna(subset=[value_col])
+    working_df = working_df[working_df[value_col].abs() >= float(min_abs_value)]
+    if working_df.empty:
+        return {"top_positive": [], "top_negative": [], "top_absolute": []}
+
+    top_positive_df = working_df.sort_values(value_col, ascending=False).head(top_n)
+    top_negative_df = working_df.sort_values(value_col, ascending=True).head(top_n)
+    top_absolute_df = working_df.assign(abs_value=working_df[value_col].abs()).sort_values(
+        "abs_value",
+        ascending=False,
+    ).head(top_n)
+
+    def _to_records(input_df: pd.DataFrame) -> list[dict[str, float]]:
+        records = []
+        for _, row in input_df.iterrows():
+            records.append(
+                {
+                    "kpi": str(row["KPI"]),
+                    "value": float(row[value_col]),
+                }
+            )
+        return records
+
+    return {
+        "top_positive": _to_records(top_positive_df),
+        "top_negative": _to_records(top_negative_df),
+        "top_absolute": _to_records(top_absolute_df),
+    }
+
+
 def build_report_payload(
     *,
     traffic_business_unit: str,
@@ -113,6 +158,9 @@ def build_report_payload(
     promo_impact_df: pd.DataFrame,
 ) -> dict[str, Any]:
     winner_info = compute_ab_winner(control_df=control_df, testing_df=testing_df)
+    control_drivers = extract_kpi_drivers(control_df, value_col=PROMO_VS_BASELINE_COL)
+    testing_drivers = extract_kpi_drivers(testing_df, value_col=PROMO_VS_BASELINE_COL)
+    promo_impact_drivers = extract_kpi_drivers(promo_impact_df, value_col=PROMO_IMPACT_COL)
 
     return {
         "meta": {
@@ -141,6 +189,11 @@ def build_report_payload(
             "promo_impact": promo_impact_df.to_dict(orient="records"),
         },
         "winner_assessment": winner_info,
+        "phase1_driver_analysis": {
+            "control_group_drivers": control_drivers,
+            "testing_group_drivers": testing_drivers,
+            "promo_impact_drivers": promo_impact_drivers,
+        },
     }
 
 
@@ -178,21 +231,34 @@ def build_phase1_summary_text(payload: dict[str, Any]) -> str:
             f"- {item.get('kpi')}: testing-control uplift = {uplift_text} ({item.get('decision')})"
         )
 
-    promo_impact = payload.get("kpis", {}).get("promo_impact", [])
-    impact_col = "Promo Impact (Group A %Diff - Group B %Diff )"
-    top_impact_rows = []
-    for row in promo_impact:
-        impact_value = _safe_float(row.get(impact_col))
-        if impact_value is None:
-            continue
-        top_impact_rows.append((row.get("KPI", "Unknown KPI"), impact_value))
+    driver_analysis = payload.get("phase1_driver_analysis", {})
+    control_drivers = driver_analysis.get("control_group_drivers", {}).get("top_absolute", [])
+    testing_drivers = driver_analysis.get("testing_group_drivers", {}).get("top_absolute", [])
+    promo_impact_drivers = driver_analysis.get("promo_impact_drivers", {}).get("top_absolute", [])
 
-    top_impact_rows.sort(key=lambda item: abs(item[1]), reverse=True)
-    if top_impact_rows:
-        lines.append("")
-        lines.append("## Top KPI deltas (absolute)")
-        for kpi, impact in top_impact_rows[:5]:
-            lines.append(f"- {kpi}: {impact:.2%}")
+    lines.append("")
+    lines.append(f"## {control_group} drivers (% Diff: Promo vs Baseline)")
+    if control_drivers:
+        for item in control_drivers:
+            lines.append(f"- {item.get('kpi')}: {float(item.get('value', 0.0)):.2%}")
+    else:
+        lines.append("- N/A")
+
+    lines.append("")
+    lines.append(f"## {testing_group} drivers (% Diff: Promo vs Baseline)")
+    if testing_drivers:
+        for item in testing_drivers:
+            lines.append(f"- {item.get('kpi')}: {float(item.get('value', 0.0)):.2%}")
+    else:
+        lines.append("- N/A")
+
+    lines.append("")
+    lines.append("## Promo Impact drivers (%Diff gap: Group A - Group B)")
+    if promo_impact_drivers:
+        for item in promo_impact_drivers:
+            lines.append(f"- {item.get('kpi')}: {float(item.get('value', 0.0)):.2%}")
+    else:
+        lines.append("- N/A")
 
     lines.append("")
     lines.append("---")
