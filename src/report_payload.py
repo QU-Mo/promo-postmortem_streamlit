@@ -286,12 +286,7 @@ def build_phase1_summary_text(payload: dict[str, Any]) -> str:
         order_sign = _sign(order_pct)
         aov_sign = _sign(aov_pct)
 
-        # Check whether absorption and orders move in the same direction.
-        if absorb_sign == order_sign:
-            absorb_order_link = f"which drove a {_fmt_abs_pct(order_pct)} {_dir_noun(order_pct)} in total orders"
-        else:
-            # Divergence case: e.g., absorption improves but orders still drop due to traffic decline.
-            absorb_order_link = f"however, total orders {_dir_verb(order_pct)} by {_fmt_abs_pct(order_pct)}"
+        
 
         # Check order vs AOV interaction.
         if order_sign != 0 and aov_sign != 0:
@@ -311,13 +306,30 @@ def build_phase1_summary_text(payload: dict[str, Any]) -> str:
                 "in Average Order Value (AOV)."
             )
 
+        if absorb_sign == 0:
+            funnel_order_sentence = (
+                f"* **Order-Level Funnel:** Total orders {_dir_verb(order_pct)} by "
+                f"{_fmt_abs_pct(order_pct)}. {aov_logic}"
+            )
+        else:
+            # Check whether absorption and orders move in the same direction.
+            if absorb_sign == order_sign:
+                absorb_order_link = (
+                    f"which drove a {_fmt_abs_pct(order_pct)} {_dir_noun(order_pct)} in total orders"
+                )
+            else:
+                # Divergence case: e.g., absorption improves but orders still drop due to traffic decline.
+                absorb_order_link = (
+                    f"however, total orders {_dir_verb(order_pct)} by {_fmt_abs_pct(order_pct)}"
+                )
+
+
         impact_word = "tailwind" if absorb_sign > 0 else "headwind"
-
         funnel_order_sentence = (
-            f"* **Order-Level Funnel:** A notable {impact_word} was a {_fmt_abs_pct(absorb_pct)} "
-            f"{_dir_noun(absorb_pct)} in store absorption rate, {absorb_order_link}. {aov_logic}"
-        )
-
+                f"* **Order-Level Funnel:** A notable {impact_word} was a {_fmt_abs_pct(absorb_pct)} "
+                f"{_dir_noun(absorb_pct)} in store absorption rate, {absorb_order_link}. {aov_logic}"
+            )
+        
         # Item-level funnel.
         # Item-level funnel: optimize logic across quantity and price-per-item interactions.
         rev_sign = _sign(revenue_pct)
@@ -327,12 +339,19 @@ def build_phase1_summary_text(payload: dict[str, Any]) -> str:
 
         # Check whether quantity and PPI move in the same direction.
         if qty_sign == ppi_sign:
-            # Same direction: both metrics jointly drive revenue movement.
-            ppi_verb = "boosted" if ppi_sign > 0 else "dragged down"
+            # Same direction: highlight the larger absolute mover first for clearer attribution.
+            if abs(qty_pct or 0) >= abs(ppi_pct or 0):
+                first_metric, first_pct = "total item quantity", qty_pct
+                second_metric, second_pct = "price per item", ppi_pct
+            else:
+                first_metric, first_pct = "price per item", ppi_pct
+                second_metric, second_pct = "total item quantity", qty_pct
+
+            second_verb = "boosted" if rev_sign > 0 else "dragged down"
             funnel_item_sentence = (
-                f"* **Item-Level Funnel:** The revenue {rev_movement} was driven by a {_fmt_abs_pct(qty_pct)} "
-                f"{_dir_noun(qty_pct)} in total item quantity, and further {ppi_verb} by a {_fmt_abs_pct(ppi_pct)} "
-                f"{_dir_noun(ppi_pct)} in price per item."
+                f"* **Item-Level Funnel:** The revenue {rev_movement} was primarily driven by a {_fmt_abs_pct(first_pct)} "
+                f"{_dir_noun(first_pct)} in {first_metric}, and further {second_verb} by a {_fmt_abs_pct(second_pct)} "
+                f"{_dir_noun(second_pct)} in {second_metric}."
             )
         else:
             # Opposite direction: identify primary driver and offsetting factor.
