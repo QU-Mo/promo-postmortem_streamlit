@@ -208,20 +208,25 @@ def build_phase1_summary_text(payload: dict[str, Any]) -> str:
     def _get_value(df: pd.DataFrame, kpi: str, col: str) -> float | None:
         return _extract_metric_value(df, kpi, col)
 
-    def _fmt_pct(v: float | None) -> str:
+    def _fmt_abs_pct(v: float | None) -> str:
         if v is None:
             return "N/A"
-        return f"{v:.2%}"
+        return f"{abs(v):.2%}"
 
     def _fmt_abs(v: float | None) -> str:
         if v is None:
             return "N/A"
         return f"{v:,.0f}"
 
-    def _signed_word(value: float | None, up_word: str = "increased", down_word: str = "decreased") -> str:
-        if value is None:
-            return "changed marginally"
-        return up_word if value >= 0 else down_word
+    def _dir_verb(v: float | None) -> str:
+        if v is None or v == 0:
+            return "remained flat"
+        return "increased" if v > 0 else "decreased"
+
+    def _dir_noun(v: float | None) -> str:
+        if v is None or v == 0:
+            return "change"
+        return "increase" if v > 0 else "decline"
 
     def _compute_component_pct_abs(
         df: pd.DataFrame,
@@ -245,6 +250,7 @@ def build_phase1_summary_text(payload: dict[str, Any]) -> str:
         return pct_diff, abs_diff
 
     def _build_group_lines(df: pd.DataFrame, label: str, group_name: str) -> list[str]:
+        # Retrieve KPI values for this group.
         revenue_pct = _get_value(df, "total revenue", PROMO_VS_BASELINE_COL)
         absorb_pct = _get_value(df, "store absorption rate", PROMO_VS_BASELINE_COL)
         order_pct = _get_value(df, "total orders", PROMO_VS_BASELINE_COL)
@@ -262,55 +268,71 @@ def build_phase1_summary_text(payload: dict[str, Any]) -> str:
         if new_non_existing_abs is None and total_abs is not None and existing_abs is not None:
             new_non_existing_abs = total_abs - existing_abs
 
+        # Overall view.
+        overall_sentence = (
+            f"**Overall:** {label} ({group_name}) total revenue {_dir_verb(revenue_pct)} by "
+            f"**{_fmt_abs_pct(revenue_pct)}** compared to the baseline period."
+        )
+
+        # Order-level funnel: detect whether AOV offsets or amplifies order movement.
+        impact_word = "tailwind" if (absorb_pct or 0) > 0 else "headwind"
+        if order_pct is not None and aov_pct is not None:
+            if order_pct * aov_pct < 0:
+                aov_logic = f"was partially offset by a {_fmt_abs_pct(aov_pct)} {_dir_noun(aov_pct)}"
+            else:
+                aov_logic = f"was further amplified by a {_fmt_abs_pct(aov_pct)} {_dir_noun(aov_pct)}"
+        else:
+            aov_logic = f"was accompanied by a {_fmt_abs_pct(aov_pct)} {_dir_noun(aov_pct)}"
+
         funnel_order_sentence = (
-            f"- Funnel view (Order level): {label} ({group_name}) total revenue "
-            f"{_signed_word(revenue_pct)} by {_fmt_pct(revenue_pct)} vs Baseline Period. The primary driver is "
-            f"store absorption rate, which {_signed_word(absorb_pct)} by {_fmt_pct(absorb_pct)}, lifting total orders "
-            f"to {_fmt_pct(order_pct)}. AOV was {_fmt_pct(aov_pct)}, which "
-            f"{'supported' if (aov_pct or 0) >= 0 else 'partly offset'} the revenue outcome."
+            f"* **Order-Level Funnel:** The primary {impact_word} was a {_fmt_abs_pct(absorb_pct)} "
+            f"{_dir_noun(absorb_pct)} in store absorption rate, which drove a {_fmt_abs_pct(order_pct)} "
+            f"{_dir_noun(order_pct)} in total orders. This volume impact {aov_logic} in Average Order Value (AOV)."
         )
 
+        # Item-level funnel.
+        rev_movement = "growth" if (revenue_pct or 0) > 0 else "drop"
+        ppi_logic = "boosted" if (ppi_pct or 0) > 0 else "dragged down"
         funnel_item_sentence = (
-            f"- Funnel view (Item level): {label} total revenue {_signed_word(revenue_pct)} by {_fmt_pct(revenue_pct)} "
-            f"vs Baseline Period, with total quantity {_signed_word(qty_pct)} by {_fmt_pct(qty_pct)} and "
-            f"price per item {_signed_word(ppi_pct)} by {_fmt_pct(ppi_pct)}. Together, these explain the item-level "
-            f"revenue movement."
+            f"* **Item-Level Funnel:** The revenue {rev_movement} was driven by a {_fmt_abs_pct(qty_pct)} "
+            f"{_dir_noun(qty_pct)} in total item quantity, and further {ppi_logic} by a {_fmt_abs_pct(ppi_pct)} "
+            f"{_dir_noun(ppi_pct)} in price per item."
         )
 
+        # Customer mix-shift view.
         if existing_abs is None or new_non_existing_abs is None:
             component_sentence = (
-                "- Component shift view: Existing-insider vs new/non-insider split is unavailable, so structural "
-                "source attribution is not reliable for this group."
+                "* **Customer Mix-Shift:** Existing-insider vs new/non-insider split is unavailable, "
+                "so structural source attribution is not reliable for this group."
             )
         else:
-            existing_word = "increased" if existing_abs >= 0 else "decreased"
-            new_non_word = "increased" if new_non_existing_abs >= 0 else "decreased"
             component_sentence = (
-                f"- Component shift view: Total revenue {_signed_word(revenue_pct)} by {_fmt_pct(revenue_pct)} vs Baseline Period. "
-                f"Existing insider contribution (existing revenue) {existing_word} by {_fmt_pct(existing_pct)} "
-                f"(Abs: {_fmt_abs(existing_abs)}). In contrast, new + non-insider revenue "
-                f"(= total revenue - existing revenue) {new_non_word} by {_fmt_pct(new_non_existing_pct)} "
-                f"(Abs: {_fmt_abs(new_non_existing_abs)}), "
-                f"showing the mix-shift impact across customer components."
+                f"* **Customer Mix-Shift:** New and non-insider revenue {_dir_verb(new_non_existing_pct)} "
+                f"by {_fmt_abs_pct(new_non_existing_pct)} (Abs: {_fmt_abs(new_non_existing_abs)}). "
+                f"In comparison, existing insider revenue {_dir_verb(existing_pct)} by "
+                f"{_fmt_abs_pct(existing_pct)} (Abs: {_fmt_abs(existing_abs)})."
             )
 
         return [
-            f"## {label} drivers (% Diff: Promo vs Baseline)",
-            *[funnel_order_sentence, funnel_item_sentence, component_sentence],
+            f"## {label} Performance Drivers (Promo vs. Baseline)",
+            overall_sentence,
+            "",
+            funnel_order_sentence,
+            funnel_item_sentence,
+            component_sentence,
             "",
         ]
 
     lines = [
         "# Campaign Post-Mortem Summary (Phase 1)",
         "",
-        f"- Baseline Period: {', '.join(meta.get('baseline_dates', []))}",
-        f"- Promo Period: {', '.join(meta.get('promo_dates', []))}",
+        f"- **Baseline Period:** {', '.join(meta.get('baseline_dates', []))}",
+        f"- **Promo Period:** {', '.join(meta.get('promo_dates', []))}",
         "",
     ]
     lines.extend(_build_group_lines(control_df, "Group A", control_group))
     lines.extend(_build_group_lines(testing_df, "Group B", testing_group))
     lines.append("---")
-    lines.append("Note: This summary is generated from deterministic KPI rules and templates.")
+    lines.append("> *Note: This summary is generated from deterministic KPI rules and dynamic templates.*")
     return "\n".join(lines)
-
 
