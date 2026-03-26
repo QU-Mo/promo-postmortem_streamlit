@@ -1,6 +1,8 @@
 import streamlit as st
+import streamlit.components.v1 as components
 from datetime import date, timedelta
 import json
+import base64
 from google.cloud import bigquery
 import pandas as pd
 import altair as alt
@@ -510,6 +512,42 @@ def dataframe_height(df: pd.DataFrame, row_height: int = 35, header_height: int 
         return 140
     return max(140, min(1200, header_height + len(df) * row_height + padding))
 
+def render_copyable_dataframe(
+    table_df: pd.DataFrame,
+    *,
+    key: str,
+    height: int,
+    width: str = "stretch",
+) -> None:
+    csv_data = table_df.to_csv(index=False)
+    encoded_csv = base64.b64encode(csv_data.encode("utf-8")).decode("utf-8")
+    components.html(
+        f"""
+        <div style="display:flex;justify-content:flex-end;align-items:center;">
+          <button id="copy-btn-{key}" style="padding:4px 10px;border-radius:6px;border:1px solid #ccc;cursor:pointer;background:#fff;">
+            📋 Copy
+          </button>
+          <span id="copy-msg-{key}" style="margin-left:8px;font-size:12px;color:#2e7d32;"></span>
+        </div>
+        <script>
+          const copyButton = document.getElementById("copy-btn-{key}");
+          const copyMessage = document.getElementById("copy-msg-{key}");
+          copyButton?.addEventListener("click", async () => {{
+            try {{
+              await navigator.clipboard.writeText(atob("{encoded_csv}"));
+              copyMessage.textContent = "Copied";
+              setTimeout(() => copyMessage.textContent = "", 1200);
+            }} catch (err) {{
+              copyMessage.textContent = "Copy failed";
+              setTimeout(() => copyMessage.textContent = "", 1200);
+            }}
+          }});
+        </script>
+        """,
+        height=38,
+    )
+    st.dataframe(table_df, width=width, height=height)
+
 
 def format_date_list(dates: list[date]) -> str:
     if not dates:
@@ -922,8 +960,9 @@ if st.session_state.get("group_tables"):
     margin_control_col, _, margin_testing_col = st.columns([5, 1, 5])
     with margin_control_col:
         st.markdown(f"**{_group_label(selected_control_group)}**")
-        st.dataframe(
+        render_copyable_dataframe(
             format_store_level_discount_breakdown_table(store_level_discount_breakdown_control),
+            key="store_pc1_control",
             width='stretch',
             height=dataframe_height(store_level_discount_breakdown_control),
         )
@@ -931,8 +970,9 @@ if st.session_state.get("group_tables"):
 
     with margin_testing_col:
         st.markdown(f"**{_group_label(selected_testing_group)}**")
-        st.dataframe(
+        render_copyable_dataframe(
             format_store_level_discount_breakdown_table(store_level_discount_breakdown_testing),
+            key="store_pc1_testing",
             width='stretch',
             height=dataframe_height(store_level_discount_breakdown_testing),
         )
@@ -1050,8 +1090,9 @@ if st.session_state.get("group_tables"):
         st.markdown(f"**{_group_label(selected_control_group)}**")
         if control_df.attrs.get("pedestrian_footfall_label"):
             st.caption(control_df.attrs["pedestrian_footfall_label"])
-        st.dataframe(
+        render_copyable_dataframe(
             format_funnel_table(control_df),
+            key="store_funnel_control",
             width='stretch',
             height=dataframe_height(control_df),
         )
@@ -1060,8 +1101,9 @@ if st.session_state.get("group_tables"):
         st.markdown(f"**{_group_label(selected_testing_group)}**")
         if testing_df.attrs.get("pedestrian_footfall_label"):
             st.caption(testing_df.attrs["pedestrian_footfall_label"])
-        st.dataframe(
+        render_copyable_dataframe(
             format_funnel_table(testing_df),
+            key="store_funnel_testing",
             width='stretch',
             height=dataframe_height(testing_df),
         )
@@ -1070,8 +1112,9 @@ if st.session_state.get("group_tables"):
     st.caption(
         "Promo Impact includes % Diff and Abs Diff comparisons between testing and control groups."
     )
-    st.dataframe(
+    render_copyable_dataframe(
         format_promo_impact_table(promo_impact_df),
+        key="store_promo_impact",
         width='stretch',
         height=dataframe_height(promo_impact_df),
     )
@@ -1206,15 +1249,17 @@ if st.session_state.get("category_group_tables"):
     category_control_col, _, category_testing_col = st.columns([5, 1, 5])
     with category_control_col:
         st.markdown(f"**{_group_label(selected_control_group)}**")
-        st.dataframe(
+        render_copyable_dataframe(
             format_funnel_table(category_control_table),
+            key="category_funnel_control",
             width='stretch',
             height=dataframe_height(category_control_table),
         )
     with category_testing_col:
         st.markdown(f"**{_group_label(selected_testing_group)}**")
-        st.dataframe(
+        render_copyable_dataframe(
             format_funnel_table(category_testing_table),
+            key="category_funnel_testing",
             width='stretch',
             height=dataframe_height(category_testing_table),
         )
@@ -1225,8 +1270,9 @@ if st.session_state.get("category_group_tables"):
         selected_testing_group=selected_testing_group,
     )
     st.markdown("**Promo Impact**")
-    st.dataframe(
+    render_copyable_dataframe(
         format_promo_impact_table(category_promo_impact),
+        key="category_promo_impact",
         width='stretch',
         height=dataframe_height(category_promo_impact),
     )
