@@ -984,56 +984,20 @@ if st.session_state.get("group_tables"):
             file_name="store_level_all_categories.csv",
             mime="text/csv",
         )
+
     funnel_table_key = "funnel_tables_include_sunday" if include_sunday_funnel_toggle else "funnel_tables"
     funnel_tables = st.session_state["group_tables"].get(funnel_table_key, {})
-    
-
-    selected_groups = [selected_control_group, selected_testing_group]
-    
-    control_table_col, _, testing_table_col = st.columns([5, 1, 5])
-    with control_table_col:
-        control_df = funnel_tables.get(selected_control_group, pd.DataFrame())
-        
-        st.markdown(f"**{_group_label(selected_control_group)}**")
-        if control_df.attrs.get("pedestrian_footfall_label"):
-            st.caption(control_df.attrs["pedestrian_footfall_label"])
-        st.dataframe(
-            format_funnel_table(control_df),
-            width='stretch',
-            height=dataframe_height(control_df),
-        )
-
-    with testing_table_col:
-        testing_df = funnel_tables.get(selected_testing_group, pd.DataFrame())
-        
-        st.markdown(f"**{_group_label(selected_testing_group)}**")
-        if testing_df.attrs.get("pedestrian_footfall_label"):
-            st.caption(testing_df.attrs["pedestrian_footfall_label"])
-        st.dataframe(
-            format_funnel_table(testing_df),
-            width='stretch',
-            height=dataframe_height(testing_df),
-        )
-
+    control_df = funnel_tables.get(selected_control_group, pd.DataFrame())
+    testing_df = funnel_tables.get(selected_testing_group, pd.DataFrame())
     promo_impact_df = build_promo_impact_table(
         funnel_tables=funnel_tables,
         selected_control_group=selected_control_group,
         selected_testing_group=selected_testing_group,
     )
-    st.markdown("**Promo Impact**")
-    st.caption(
-        "Promo Impact includes % Diff and Abs Diff comparisons between testing and control groups."
-    )
-    st.dataframe(
-        format_promo_impact_table(promo_impact_df),
-        width='stretch',
-        height=dataframe_height(promo_impact_df),
-    )
-
 
     st.markdown("**Phase 1 - Driver Analysis Summary (Store Level Funnel)**")
     st.caption(
-        "Phase 1 focuses on KPI drivers for each group's % Diff (Promo vs Baseline) and Promo Impact drivers between groups."
+        "Phase 1 focuses on Group A/B total revenue drivers (% Diff: Promo vs Baseline), including order-level funnel, item-level funnel, and component shift."
     )
     if st.button("Generate Driver Summary Text (Phase 1)"):
         report_payload = build_report_payload(
@@ -1077,6 +1041,40 @@ if st.session_state.get("group_tables"):
             file_name="campaign_post_mortem_phase1_payload.json",
             mime="application/json",
         )
+
+
+    selected_groups = [selected_control_group, selected_testing_group]
+    
+    control_table_col, _, testing_table_col = st.columns([5, 1, 5])
+    with control_table_col:
+        st.markdown(f"**{_group_label(selected_control_group)}**")
+        if control_df.attrs.get("pedestrian_footfall_label"):
+            st.caption(control_df.attrs["pedestrian_footfall_label"])
+        st.dataframe(
+            format_funnel_table(control_df),
+            width='stretch',
+            height=dataframe_height(control_df),
+        )
+
+    with testing_table_col:
+        st.markdown(f"**{_group_label(selected_testing_group)}**")
+        if testing_df.attrs.get("pedestrian_footfall_label"):
+            st.caption(testing_df.attrs["pedestrian_footfall_label"])
+        st.dataframe(
+            format_funnel_table(testing_df),
+            width='stretch',
+            height=dataframe_height(testing_df),
+        )
+
+    st.markdown("**Promo Impact**")
+    st.caption(
+        "Promo Impact includes % Diff and Abs Diff comparisons between testing and control groups."
+    )
+    st.dataframe(
+        format_promo_impact_table(promo_impact_df),
+        width='stretch',
+        height=dataframe_height(promo_impact_df),
+    )
 
 
     st.write("Charts - All Funnel KPIs (Promo vs Baseline By Weekday)")
@@ -1554,4 +1552,3 @@ if st.session_state.get("category_group_tables"):
         _render_waterfall_pair(category_control_quantity_waterfall, category_testing_quantity_waterfall, "Quantity")
         st.markdown("**Waterfall - Selected Categories RP vs BP PC1 Bridge**")
         _render_waterfall_pair(category_control_pc1_waterfall, category_testing_pc1_waterfall, "PC1")
-
