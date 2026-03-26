@@ -227,6 +227,13 @@ def build_phase1_summary_text(payload: dict[str, Any]) -> str:
         if v is None or v == 0:
             return "change"
         return "increase" if v > 0 else "decline"
+    
+     # Helper: normalize metric direction to support multi-metric interaction logic.
+    def _sign(v: float | None) -> int:
+        if v is None or v == 0:
+            return 0
+        return 1 if v > 0 else -1
+
 
     def _compute_component_pct_abs(
         df: pd.DataFrame,
@@ -274,43 +281,109 @@ def build_phase1_summary_text(payload: dict[str, Any]) -> str:
             f"**{_fmt_abs_pct(revenue_pct)}** compared to the baseline period."
         )
 
-        # Order-level funnel: detect whether AOV offsets or amplifies order movement.
-        impact_word = "tailwind" if (absorb_pct or 0) > 0 else "headwind"
-        if order_pct is not None and aov_pct is not None:
-            if order_pct * aov_pct < 0:
-                aov_logic = f"was partially offset by a {_fmt_abs_pct(aov_pct)} {_dir_noun(aov_pct)}"
-            else:
-                aov_logic = f"was further amplified by a {_fmt_abs_pct(aov_pct)} {_dir_noun(aov_pct)}"
+        # Order-level funnel: optimize interaction logic across absorption, order volume, and AOV.
+        absorb_sign = _sign(absorb_pct)
+        order_sign = _sign(order_pct)
+        aov_sign = _sign(aov_pct)
+
+        # Check whether absorption and orders move in the same direction.
+        if absorb_sign == order_sign:
+            absorb_order_link = f"which drove a {_fmt_abs_pct(order_pct)} {_dir_noun(order_pct)} in total orders"
         else:
-            aov_logic = f"was accompanied by a {_fmt_abs_pct(aov_pct)} {_dir_noun(aov_pct)}"
+            # Divergence case: e.g., absorption improves but orders still drop due to traffic decline.
+            absorb_order_link = f"however, total orders {_dir_verb(order_pct)} by {_fmt_abs_pct(order_pct)}"
+
+        # Check order vs AOV interaction.
+        if order_sign != 0 and aov_sign != 0:
+            if order_sign == aov_sign:
+                aov_logic = (
+                    f"This volume impact was further amplified by a {_fmt_abs_pct(aov_pct)} "
+                    f"{_dir_noun(aov_pct)} in Average Order Value (AOV)."
+                )
+            else:
+                 aov_logic = (
+                    f"This volume impact was partially offset by a {_fmt_abs_pct(aov_pct)} "
+                    f"{_dir_noun(aov_pct)} in Average Order Value (AOV)."
+                )
+        else:
+            aov_logic = (
+                f"This was accompanied by a {_fmt_abs_pct(aov_pct)} {_dir_noun(aov_pct)} "
+                "in Average Order Value (AOV)."
+            )
+
+        impact_word = "tailwind" if absorb_sign > 0 else "headwind"
 
         funnel_order_sentence = (
-            f"* **Order-Level Funnel:** The primary {impact_word} was a {_fmt_abs_pct(absorb_pct)} "
-            f"{_dir_noun(absorb_pct)} in store absorption rate, which drove a {_fmt_abs_pct(order_pct)} "
-            f"{_dir_noun(order_pct)} in total orders. This volume impact {aov_logic} in Average Order Value (AOV)."
+            f"* **Order-Level Funnel:** A notable {impact_word} was a {_fmt_abs_pct(absorb_pct)} "
+            f"{_dir_noun(absorb_pct)} in store absorption rate, {absorb_order_link}. {aov_logic}"
         )
 
         # Item-level funnel.
-        rev_movement = "growth" if (revenue_pct or 0) > 0 else "drop"
-        ppi_logic = "boosted" if (ppi_pct or 0) > 0 else "dragged down"
-        funnel_item_sentence = (
-            f"* **Item-Level Funnel:** The revenue {rev_movement} was driven by a {_fmt_abs_pct(qty_pct)} "
-            f"{_dir_noun(qty_pct)} in total item quantity, and further {ppi_logic} by a {_fmt_abs_pct(ppi_pct)} "
-            f"{_dir_noun(ppi_pct)} in price per item."
-        )
+        # Item-level funnel: optimize logic across quantity and price-per-item interactions.
+        rev_sign = _sign(revenue_pct)
+        qty_sign = _sign(qty_pct)
+        ppi_sign = _sign(ppi_pct)
+        rev_movement = "growth" if rev_sign > 0 else "decline"
 
-        # Customer mix-shift view.
+        # Check whether quantity and PPI move in the same direction.
+        if qty_sign == ppi_sign:
+            # Same direction: both metrics jointly drive revenue movement.
+            ppi_verb = "boosted" if ppi_sign > 0 else "dragged down"
+            funnel_item_sentence = (
+                f"* **Item-Level Funnel:** The revenue {rev_movement} was driven by a {_fmt_abs_pct(qty_pct)} "
+                f"{_dir_noun(qty_pct)} in total item quantity, and further {ppi_verb} by a {_fmt_abs_pct(ppi_pct)} "
+                f"{_dir_noun(ppi_pct)} in price per item."
+            )
+        else:
+            # Opposite direction: identify primary driver and offsetting factor.
+            if qty_sign == rev_sign:
+                funnel_item_sentence = (
+                    f"* **Item-Level Funnel:** The revenue {rev_movement} was primarily driven by a "
+                    f"{_fmt_abs_pct(qty_pct)} {_dir_noun(qty_pct)} in total item quantity, which was partially "
+                    f"offset by a {_fmt_abs_pct(ppi_pct)} {_dir_noun(ppi_pct)} in price per item."
+                )
+            else:
+                funnel_item_sentence = (
+                    f"* **Item-Level Funnel:** The revenue {rev_movement} was primarily driven by a "
+                    f"{_fmt_abs_pct(ppi_pct)} {_dir_noun(ppi_pct)} in price per item, mitigating the "
+                    f"{_fmt_abs_pct(qty_pct)} {_dir_noun(qty_pct)} in total item quantity."
+                )
+
+        # Customer mix-shift view: lead with existing cohort and include business interpretation.
         if existing_abs is None or new_non_existing_abs is None:
             component_sentence = (
                 "* **Customer Mix-Shift:** Existing-insider vs new/non-insider split is unavailable, "
                 "so structural source attribution is not reliable for this group."
             )
         else:
+            exist_sign = _sign(existing_pct)
+            new_sign = _sign(new_non_existing_pct)
+
+            # Business interpretation by direction combination.
+            if exist_sign > 0 and new_sign < 0:
+                mix_insight = (
+                    "indicating strong cannibalization, as the promotion largely shifted existing engagement "
+                    "rather than acquiring new volume."
+                )
+            elif exist_sign > 0 and new_sign > 0:
+                mix_insight = "demonstrating broad-based synergistic growth across both customer cohorts."
+            elif exist_sign < 0 and new_sign < 0:
+                mix_insight = "reflecting an across-the-board contraction in both customer segments."
+            elif exist_sign < 0 and new_sign > 0:
+                mix_insight = (
+                    "suggesting that new customer acquisition partially offset the churn or decline in "
+                    "existing insider engagement."
+                )
+            else:
+                mix_insight = "highlighting the shifting dynamics between customer cohorts."
+
+
             component_sentence = (
-                f"* **Customer Mix-Shift:** New and non-insider revenue {_dir_verb(new_non_existing_pct)} "
-                f"by {_fmt_abs_pct(new_non_existing_pct)} (Abs: {_fmt_abs(new_non_existing_abs)}). "
-                f"In comparison, existing insider revenue {_dir_verb(existing_pct)} by "
-                f"{_fmt_abs_pct(existing_pct)} (Abs: {_fmt_abs(existing_abs)})."
+                f"* **Customer Mix-Shift:** Existing insider revenue {_dir_verb(existing_pct)} by "
+                f"{_fmt_abs_pct(existing_pct)} (Abs: {_fmt_abs(existing_abs)}). "
+                f"Meanwhile, new and non-insider revenue {_dir_verb(new_non_existing_pct)} by "
+                f"{_fmt_abs_pct(new_non_existing_pct)} (Abs: {_fmt_abs(new_non_existing_abs)}), "
+                f"{mix_insight}"
             )
 
         return [
