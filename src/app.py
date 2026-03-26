@@ -1,9 +1,17 @@
 import streamlit as st
+import streamlit.components.v1 as components
 from datetime import date, timedelta
 import json
+import base64
 from google.cloud import bigquery
 import pandas as pd
 import altair as alt
+
+
+from report_payload import (
+    build_phase1_summary_text,
+    build_report_payload,
+)
 
 
 
@@ -504,6 +512,54 @@ def dataframe_height(df: pd.DataFrame, row_height: int = 35, header_height: int 
         return 140
     return max(140, min(1200, header_height + len(df) * row_height + padding))
 
+def render_copyable_dataframe(
+    table_df: pd.DataFrame,
+    *,
+    key: str,
+    height: int,
+    width: str = "stretch",
+) -> None:
+    tsv_data = table_df.to_csv(index=False, sep="\t")
+    html_data = table_df.to_html(index=False, border=0)
+    encoded_tsv = base64.b64encode(tsv_data.encode("utf-8")).decode("utf-8")
+    encoded_html = base64.b64encode(html_data.encode("utf-8")).decode("utf-8")
+    components.html(
+        f"""
+        <div style="display:flex;justify-content:flex-end;align-items:center;">
+          <button id="copy-btn-{key}" style="padding:4px 10px;border-radius:6px;border:1px solid #ccc;cursor:pointer;background:#fff;">
+            📋 Copy (Excel)
+          </button>
+          <span id="copy-msg-{key}" style="margin-left:8px;font-size:12px;color:#2e7d32;"></span>
+        </div>
+        <script>
+          const copyButton = document.getElementById("copy-btn-{key}");
+          const copyMessage = document.getElementById("copy-msg-{key}");
+          copyButton?.addEventListener("click", async () => {{
+            try {{
+              const plainText = atob("{encoded_tsv}");
+              const htmlText = atob("{encoded_html}");
+              if (navigator.clipboard && window.ClipboardItem) {{
+                const clipboardItem = new ClipboardItem({{
+                  "text/plain": new Blob([plainText], {{ type: "text/plain" }}),
+                  "text/html": new Blob([htmlText], {{ type: "text/html" }}),
+                }});
+                await navigator.clipboard.write([clipboardItem]);
+              }} else {{
+                await navigator.clipboard.writeText(plainText);
+              }}
+              copyMessage.textContent = "Copied";
+              setTimeout(() => copyMessage.textContent = "", 1200);
+            }} catch (err) {{
+              copyMessage.textContent = "Copy failed";
+              setTimeout(() => copyMessage.textContent = "", 1200);
+            }}
+          }});
+        </script>
+        """,
+        height=38,
+    )
+    st.dataframe(table_df, width=width, height=height)
+
 
 def format_date_list(dates: list[date]) -> str:
     if not dates:
@@ -916,8 +972,9 @@ if st.session_state.get("group_tables"):
     margin_control_col, _, margin_testing_col = st.columns([5, 1, 5])
     with margin_control_col:
         st.markdown(f"**{_group_label(selected_control_group)}**")
-        st.dataframe(
+        render_copyable_dataframe(
             format_store_level_discount_breakdown_table(store_level_discount_breakdown_control),
+            key="store_pc1_control",
             width='stretch',
             height=dataframe_height(store_level_discount_breakdown_control),
         )
@@ -925,8 +982,9 @@ if st.session_state.get("group_tables"):
 
     with margin_testing_col:
         st.markdown(f"**{_group_label(selected_testing_group)}**")
-        st.dataframe(
+        render_copyable_dataframe(
             format_store_level_discount_breakdown_table(store_level_discount_breakdown_testing),
+            key="store_pc1_testing",
             width='stretch',
             height=dataframe_height(store_level_discount_breakdown_testing),
         )
@@ -978,53 +1036,101 @@ if st.session_state.get("group_tables"):
             file_name="store_level_all_categories.csv",
             mime="text/csv",
         )
+
     funnel_table_key = "funnel_tables_include_sunday" if include_sunday_funnel_toggle else "funnel_tables"
     funnel_tables = st.session_state["group_tables"].get(funnel_table_key, {})
-    
-
-    selected_groups = [selected_control_group, selected_testing_group]
-    
-    control_table_col, _, testing_table_col = st.columns([5, 1, 5])
-    with control_table_col:
-        control_df = funnel_tables.get(selected_control_group, pd.DataFrame())
-        
-        st.markdown(f"**{_group_label(selected_control_group)}**")
-        if control_df.attrs.get("pedestrian_footfall_label"):
-            st.caption(control_df.attrs["pedestrian_footfall_label"])
-        st.dataframe(
-            format_funnel_table(control_df),
-            width='stretch',
-            height=dataframe_height(control_df),
-        )
-
-    with testing_table_col:
-        testing_df = funnel_tables.get(selected_testing_group, pd.DataFrame())
-        
-        st.markdown(f"**{_group_label(selected_testing_group)}**")
-        if testing_df.attrs.get("pedestrian_footfall_label"):
-            st.caption(testing_df.attrs["pedestrian_footfall_label"])
-        st.dataframe(
-            format_funnel_table(testing_df),
-            width='stretch',
-            height=dataframe_height(testing_df),
-        )
-
+    control_df = funnel_tables.get(selected_control_group, pd.DataFrame())
+    testing_df = funnel_tables.get(selected_testing_group, pd.DataFrame())
     promo_impact_df = build_promo_impact_table(
         funnel_tables=funnel_tables,
         selected_control_group=selected_control_group,
         selected_testing_group=selected_testing_group,
     )
+
+    st.markdown("**Phase 1 - Driver Analysis Summary (Store Level Funnel)**")
+    st.caption(
+        "Phase 1 focuses on Group A/B total revenue drivers (% Diff: Promo vs Baseline), including order-level funnel, item-level funnel, and component shift."
+    )
+    promo_mechanism = st.selectbox(
+        "Promo Mechanism for Price-Type Mix Insight",
+        options=["BOTH", "BP_ONLY", "RP_ONLY"],
+        index=0,
+        help="Used by the summary generator to interpret BP/RP mix-shift logic.",
+    )
+    
+    if st.button("Generate Driver Summary Text (Phase 1)"):
+        report_payload = build_report_payload(
+            traffic_business_unit=traffic_business_unit,
+            traffic_country=traffic_country,
+            order_company_name_short=order_company_name_short,
+            order_channel=order_channel,
+            order_country=order_country,
+            baseline_dates=baseline_dates,
+            promo_dates=promo_dates,
+            selected_control_group=selected_control_group,
+            selected_testing_group=selected_testing_group,
+            promo_mechanism=promo_mechanism,
+            group_store_map=group_store_map,
+            group_description_map=group_description_map,
+            control_df=control_df,
+            testing_df=testing_df,
+            promo_impact_df=promo_impact_df,
+        )
+        summary_text = build_phase1_summary_text(report_payload)
+
+        st.session_state["phase1_report_payload"] = report_payload
+        st.session_state["phase1_summary_text"] = summary_text
+
+    if "phase1_summary_text" in st.session_state:
+        st.text_area(
+            "Summary Text",
+            value=st.session_state["phase1_summary_text"],
+            height=360,
+        )
+        st.download_button(
+            "Download Summary (TXT)",
+            data=st.session_state["phase1_summary_text"].encode("utf-8"),
+            file_name="campaign_post_mortem_phase1_summary.txt",
+            mime="text/plain",
+        )
+
+
+    selected_groups = [selected_control_group, selected_testing_group]
+    
+    control_table_col, _, testing_table_col = st.columns([5, 1, 5])
+    with control_table_col:
+        st.markdown(f"**{_group_label(selected_control_group)}**")
+        if control_df.attrs.get("pedestrian_footfall_label"):
+            st.caption(control_df.attrs["pedestrian_footfall_label"])
+        render_copyable_dataframe(
+            format_funnel_table(control_df),
+            key="store_funnel_control",
+            width='stretch',
+            height=dataframe_height(control_df),
+        )
+
+    with testing_table_col:
+        st.markdown(f"**{_group_label(selected_testing_group)}**")
+        if testing_df.attrs.get("pedestrian_footfall_label"):
+            st.caption(testing_df.attrs["pedestrian_footfall_label"])
+        render_copyable_dataframe(
+            format_funnel_table(testing_df),
+            key="store_funnel_testing",
+            width='stretch',
+            height=dataframe_height(testing_df),
+        )
+
     st.markdown("**Promo Impact**")
     st.caption(
         "Promo Impact includes % Diff and Abs Diff comparisons between testing and control groups."
     )
-    st.dataframe(
+    render_copyable_dataframe(
         format_promo_impact_table(promo_impact_df),
+        key="store_promo_impact",
         width='stretch',
         height=dataframe_height(promo_impact_df),
     )
 
-    
 
     st.write("Charts - All Funnel KPIs (Promo vs Baseline By Weekday)")
     chart_show_group_a = st.toggle(f"Charts series: show {selected_control_group}", value=True)
@@ -1155,15 +1261,17 @@ if st.session_state.get("category_group_tables"):
     category_control_col, _, category_testing_col = st.columns([5, 1, 5])
     with category_control_col:
         st.markdown(f"**{_group_label(selected_control_group)}**")
-        st.dataframe(
+        render_copyable_dataframe(
             format_funnel_table(category_control_table),
+            key="category_funnel_control",
             width='stretch',
             height=dataframe_height(category_control_table),
         )
     with category_testing_col:
         st.markdown(f"**{_group_label(selected_testing_group)}**")
-        st.dataframe(
+        render_copyable_dataframe(
             format_funnel_table(category_testing_table),
+            key="category_funnel_testing",
             width='stretch',
             height=dataframe_height(category_testing_table),
         )
@@ -1174,8 +1282,9 @@ if st.session_state.get("category_group_tables"):
         selected_testing_group=selected_testing_group,
     )
     st.markdown("**Promo Impact**")
-    st.dataframe(
+    render_copyable_dataframe(
         format_promo_impact_table(category_promo_impact),
+        key="category_promo_impact",
         width='stretch',
         height=dataframe_height(category_promo_impact),
     )
@@ -1501,4 +1610,3 @@ if st.session_state.get("category_group_tables"):
         _render_waterfall_pair(category_control_quantity_waterfall, category_testing_quantity_waterfall, "Quantity")
         st.markdown("**Waterfall - Selected Categories RP vs BP PC1 Bridge**")
         _render_waterfall_pair(category_control_pc1_waterfall, category_testing_pc1_waterfall, "PC1")
-
