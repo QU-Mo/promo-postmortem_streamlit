@@ -8,9 +8,7 @@ import altair as alt
 
 from report_payload import (
     build_phase1_summary_text,
-    build_phase1_guardrail_payload,
     build_report_payload,
-    polish_phase1_summary_text,
 )
 
 
@@ -1001,11 +999,7 @@ if st.session_state.get("group_tables"):
     st.caption(
         "Phase 1 focuses on Group A/B total revenue drivers (% Diff: Promo vs Baseline), including order-level funnel, item-level funnel, and component shift."
     )
-    use_llm_polish = st.toggle(
-        "Use LLM polish (beta)",
-        value=False,
-        help="Template is generated first. If enabled, LLM only rewrites wording with guardrails and validation.",
-    )
+    
     if st.button("Generate Driver Summary Text (Phase 1)"):
         report_payload = build_report_payload(
             traffic_business_unit=traffic_business_unit,
@@ -1023,27 +1017,12 @@ if st.session_state.get("group_tables"):
             testing_df=testing_df,
             promo_impact_df=promo_impact_df,
         )
-        raw_summary_text = build_phase1_summary_text(report_payload)
-        summary_text = raw_summary_text
-        polish_status = "template_only"
-        if use_llm_polish:
-            guardrail_payload = build_phase1_guardrail_payload(report_payload)
-            summary_text, polish_status = polish_phase1_summary_text(
-                raw_summary_text=raw_summary_text,
-                guardrail_payload=guardrail_payload,
-            )
-            st.session_state["phase1_summary_text_raw"] = raw_summary_text
-            st.session_state["phase1_guardrail_payload"] = guardrail_payload
-        st.session_state["phase1_polish_status"] = polish_status
+        summary_text = build_phase1_summary_text(report_payload)
 
         st.session_state["phase1_report_payload"] = report_payload
         st.session_state["phase1_summary_text"] = summary_text
 
     if "phase1_summary_text" in st.session_state:
-        if st.session_state.get("phase1_polish_status") == "success":
-            st.caption("LLM polish applied with guardrail validation.")
-        elif st.session_state.get("phase1_polish_status", "").startswith("fallback:"):
-            st.caption(f"LLM polish fallback to template summary. Reason: {st.session_state['phase1_polish_status']}")
         st.text_area(
             "Summary Text",
             value=st.session_state["phase1_summary_text"],
