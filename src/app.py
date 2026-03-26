@@ -519,13 +519,15 @@ def render_copyable_dataframe(
     height: int,
     width: str = "stretch",
 ) -> None:
-    csv_data = table_df.to_csv(index=False)
-    encoded_csv = base64.b64encode(csv_data.encode("utf-8")).decode("utf-8")
+    tsv_data = table_df.to_csv(index=False, sep="\t")
+    html_data = table_df.to_html(index=False, border=0)
+    encoded_tsv = base64.b64encode(tsv_data.encode("utf-8")).decode("utf-8")
+    encoded_html = base64.b64encode(html_data.encode("utf-8")).decode("utf-8")
     components.html(
         f"""
         <div style="display:flex;justify-content:flex-end;align-items:center;">
           <button id="copy-btn-{key}" style="padding:4px 10px;border-radius:6px;border:1px solid #ccc;cursor:pointer;background:#fff;">
-            📋 Copy
+            📋 Copy (Excel)
           </button>
           <span id="copy-msg-{key}" style="margin-left:8px;font-size:12px;color:#2e7d32;"></span>
         </div>
@@ -534,7 +536,17 @@ def render_copyable_dataframe(
           const copyMessage = document.getElementById("copy-msg-{key}");
           copyButton?.addEventListener("click", async () => {{
             try {{
-              await navigator.clipboard.writeText(atob("{encoded_csv}"));
+              const plainText = atob("{encoded_tsv}");
+              const htmlText = atob("{encoded_html}");
+              if (navigator.clipboard && window.ClipboardItem) {{
+                const clipboardItem = new ClipboardItem({{
+                  "text/plain": new Blob([plainText], {{ type: "text/plain" }}),
+                  "text/html": new Blob([htmlText], {{ type: "text/html" }}),
+                }});
+                await navigator.clipboard.write([clipboardItem]);
+              }} else {{
+                await navigator.clipboard.writeText(plainText);
+              }}
               copyMessage.textContent = "Copied";
               setTimeout(() => copyMessage.textContent = "", 1200);
             }} catch (err) {{
