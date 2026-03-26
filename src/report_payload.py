@@ -151,6 +151,7 @@ def build_report_payload(
     promo_dates: list,
     selected_control_group: str,
     selected_testing_group: str,
+    promo_mechanism: str = "BOTH",
     group_store_map: dict[str, list[str]],
     group_description_map: dict[str, str],
     control_df: pd.DataFrame,
@@ -172,6 +173,7 @@ def build_report_payload(
             "order_country": order_country,
             "baseline_dates": [str(item) for item in baseline_dates],
             "promo_dates": [str(item) for item in promo_dates],
+            "promo_mechanism": promo_mechanism,
             "control_group": {
                 "name": selected_control_group,
                 "description": group_description_map.get(selected_control_group, ""),
@@ -255,6 +257,67 @@ def build_phase1_summary_text(payload: dict[str, Any]) -> str:
             return None, abs_diff
         pct_diff = abs_diff / baseline_component
         return pct_diff, abs_diff
+
+    def _build_price_mix_sentence(df: pd.DataFrame, meta_info: dict[str, Any]) -> str:
+        # Determine promotion mechanism from metadata: "BP_ONLY", "RP_ONLY", or "BOTH".
+        promo_mechanism = str(meta_info.get("promo_mechanism", "BOTH")).upper()
+
+        # Extract total revenue and RP revenue absolute values for baseline and promo periods.
+        total_baseline = _get_value(df, "total revenue", "Baseline Period")
+        total_promo = _get_value(df, "total revenue", "Promo Period")
+        rp_baseline = _get_value(df, "RP revenue", "Baseline Period")
+        rp_promo = _get_value(df, "RP revenue", "Promo Period")
+
+        if None in (total_baseline, total_promo, rp_baseline, rp_promo):
+            return "* **Price-Type Mix-Shift:** Red Price (RP) and Black Price (BP) split data is unavailable."
+
+        # Compute RP change.
+        rp_abs_diff = rp_promo - rp_baseline
+        rp_pct = rp_abs_diff / rp_baseline if rp_baseline else 0
+        rp_sign = _sign(rp_pct)
+
+        # Dynamically derive BP values: BP = Total - RP.
+        bp_baseline = total_baseline - rp_baseline
+        bp_promo = total_promo - rp_promo
+        bp_abs_diff = bp_promo - bp_baseline
+        bp_pct = bp_abs_diff / bp_baseline if bp_baseline else 0
+        bp_sign = _sign(bp_pct)
+
+        # Base metric description.
+        base_stats = (
+            f"Black Price (BP) revenue {_dir_verb(bp_pct)} by {_fmt_abs_pct(bp_pct)} (Abs: {_fmt_abs(bp_abs_diff)}). "
+            f"Concurrently, Red Price (RP) revenue {_dir_verb(rp_pct)} by {_fmt_abs_pct(rp_pct)} (Abs: {_fmt_abs(rp_abs_diff)})."
+        )
+
+        # Business interpretation by promotion mechanism.
+        insight = ""
+
+        if promo_mechanism == "BP_ONLY":
+            if bp_sign > 0 and rp_sign < 0:
+                insight = "The BP-targeted promotion successfully shifted shopper focus toward regular assortment, temporarily suppressing clearance (RP) sales."
+            elif bp_sign > 0 and rp_sign > 0:
+                insight = "The BP-targeted promotion not only drove regular assortment sales but also generated a strong halo effect, boosting clearance (RP) sales alongside it."
+            elif bp_sign < 0:
+                insight = "Unexpectedly, the BP-targeted promotion failed to stimulate Black Price sales, indicating potential issues with offer attractiveness or merchandise."
+        elif promo_mechanism == "RP_ONLY":
+            if rp_sign > 0 and bp_sign < 0:
+                insight = "The RP-targeted promotion effectively accelerated clearance but resulted in cannibalization, drawing volume away from Black Price (BP) merchandise."
+            elif rp_sign > 0 and bp_sign > 0:
+                insight = "The clearance event (RP) successfully drove traffic that crossed over to Black Price items, yielding synergistic growth across both price types."
+            elif rp_sign < 0:
+                insight = "Despite the targeted discount, Red Price revenue declined, suggesting clearance inventory might be depleted or lacking appeal."
+        else:  # promo_mechanism == "BOTH" (Store-wide).
+            if bp_sign > 0 and rp_sign > 0:
+                winner = "BP" if bp_pct > rp_pct else "RP"
+                insight = f"The broad promotion lifted both segments, with {winner} acting as the primary growth engine, driving the overall mix."
+            elif bp_sign > 0 and rp_sign < 0:
+                insight = "Despite a store-wide offer, shoppers clearly traded up to Black Price merchandise, leaving Red Price volume to contract."
+            elif rp_sign > 0 and bp_sign < 0:
+                insight = "Despite a store-wide offer, shoppers exhibited deep-discount seeking behavior, driving Red Price growth at the expense of Black Price volume."
+            else:
+                insight = "Both Black Price and Red Price segments experienced contraction despite the promotion."
+
+        return f"* **Price-Type Mix-Shift:** {base_stats} {insight}"
 
     def _build_group_lines(df: pd.DataFrame, label: str, group_name: str) -> list[str]:
         # Retrieve KPI values for this group.
@@ -411,6 +474,7 @@ def build_phase1_summary_text(payload: dict[str, Any]) -> str:
             "",
             funnel_order_sentence,
             funnel_item_sentence,
+            _build_price_mix_sentence(df, meta),
             component_sentence,
             "",
         ]
@@ -427,4 +491,3 @@ def build_phase1_summary_text(payload: dict[str, Any]) -> str:
     lines.append("---")
     lines.append("> *Note: This summary is generated from deterministic KPI rules and dynamic templates.*")
     return "\n".join(lines)
-

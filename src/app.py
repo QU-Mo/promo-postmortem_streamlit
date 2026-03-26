@@ -999,6 +999,12 @@ if st.session_state.get("group_tables"):
     st.caption(
         "Phase 1 focuses on Group A/B total revenue drivers (% Diff: Promo vs Baseline), including order-level funnel, item-level funnel, and component shift."
     )
+    promo_mechanism = st.selectbox(
+        "Promo Mechanism for Price-Type Mix Insight",
+        options=["BOTH", "BP_ONLY", "RP_ONLY"],
+        index=0,
+        help="Used by the summary generator to interpret BP/RP mix-shift logic.",
+    )
     
     if st.button("Generate Driver Summary Text (Phase 1)"):
         report_payload = build_report_payload(
@@ -1011,6 +1017,7 @@ if st.session_state.get("group_tables"):
             promo_dates=promo_dates,
             selected_control_group=selected_control_group,
             selected_testing_group=selected_testing_group,
+            promo_mechanism=promo_mechanism,
             group_store_map=group_store_map,
             group_description_map=group_description_map,
             control_df=control_df,
