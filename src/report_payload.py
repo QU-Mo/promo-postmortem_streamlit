@@ -199,69 +199,90 @@ def build_report_payload(
 
 def build_phase1_summary_text(payload: dict[str, Any]) -> str:
     meta = payload.get("meta", {})
-    winner_assessment = payload.get("winner_assessment", {})
+    control_group = meta.get("control_group", {}).get("name", "Group A")
+    testing_group = meta.get("testing_group", {}).get("name", "Group B")
 
-    control_group = meta.get("control_group", {}).get("name", "Control")
-    testing_group = meta.get("testing_group", {}).get("name", "Testing")
-    winner = winner_assessment.get("winner", "tie")
-    confidence = winner_assessment.get("confidence", "low")
+    control_df = pd.DataFrame(payload.get("kpis", {}).get("control_funnel", []))
+    testing_df = pd.DataFrame(payload.get("kpis", {}).get("testing_funnel", []))
 
-    if winner == "testing":
-        verdict = f"{testing_group} wins"
-    elif winner == "control":
-        verdict = f"{control_group} wins"
-    else:
-        verdict = "No clear winner (tie)"
+    def _get_value(df: pd.DataFrame, kpi: str, col: str) -> float | None:
+        return _extract_metric_value(df, kpi, col)
+
+    def _fmt_pct(v: float | None) -> str:
+        if v is None:
+            return "N/A"
+        return f"{v:.2%}"
+
+    def _fmt_abs(v: float | None) -> str:
+        if v is None:
+            return "N/A"
+        return f"{v:,.0f}"
+
+    def _signed_word(value: float | None, up_word: str = "increased", down_word: str = "decreased") -> str:
+        if value is None:
+            return "changed marginally"
+        return up_word if value >= 0 else down_word
+
+    def _build_group_lines(df: pd.DataFrame, label: str, group_name: str) -> list[str]:
+        revenue_pct = _get_value(df, "total revenue", PROMO_VS_BASELINE_COL)
+        absorb_pct = _get_value(df, "store absorption rate", PROMO_VS_BASELINE_COL)
+        order_pct = _get_value(df, "total orders", PROMO_VS_BASELINE_COL)
+        aov_pct = _get_value(df, "AOV", PROMO_VS_BASELINE_COL)
+        qty_pct = _get_value(df, "total quantity", PROMO_VS_BASELINE_COL)
+        ppi_pct = _get_value(df, "price per item", PROMO_VS_BASELINE_COL)
+        existing_pct = _get_value(df, "existing revenue", PROMO_VS_BASELINE_COL)
+        total_abs = _get_value(df, "total revenue", "Abs Diff (Promo - Baseline)")
+        existing_abs = _get_value(df, "existing revenue", "Abs Diff (Promo - Baseline)")
+        new_non_existing_abs = None
+        if total_abs is not None and existing_abs is not None:
+            new_non_existing_abs = total_abs - existing_abs
+
+        funnel_order_sentence = (
+            f"- Funnel view (Order level): {label} ({group_name}) total revenue "
+            f"{_signed_word(revenue_pct)} by {_fmt_pct(revenue_pct)} vs Baseline Period. The primary driver is "
+            f"store absorption rate, which {_signed_word(absorb_pct)} by {_fmt_pct(absorb_pct)}, lifting total orders "
+            f"to {_fmt_pct(order_pct)}. AOV was {_fmt_pct(aov_pct)}, which "
+            f"{'supported' if (aov_pct or 0) >= 0 else 'partly offset'} the revenue outcome."
+        )
+
+        funnel_item_sentence = (
+            f"- Funnel view (Item level): {label} total revenue {_signed_word(revenue_pct)} by {_fmt_pct(revenue_pct)} "
+            f"vs Baseline Period, with total quantity {_signed_word(qty_pct)} by {_fmt_pct(qty_pct)} and "
+            f"price per item {_signed_word(ppi_pct)} by {_fmt_pct(ppi_pct)}. Together, these explain the item-level "
+            f"revenue movement."
+        )
+
+        if existing_abs is None or new_non_existing_abs is None:
+            component_sentence = (
+                "- Component shift view: Existing-insider vs new/non-insider split is unavailable, so structural "
+                "source attribution is not reliable for this group."
+            )
+        else:
+            existing_word = "increased" if existing_abs >= 0 else "decreased"
+            new_non_word = "increased" if new_non_existing_abs >= 0 else "decreased"
+            component_sentence = (
+                f"- Component shift view: Total revenue {_signed_word(revenue_pct)} by {_fmt_pct(revenue_pct)} vs Baseline Period. "
+                f"Existing insider contribution (existing revenue) {existing_word} by {_fmt_pct(existing_pct)} "
+                f"(Abs: {_fmt_abs(existing_abs)}). In contrast, new + non-insider revenue "
+                f"(= total revenue - existing revenue) {new_non_word} by {_fmt_abs(new_non_existing_abs)} (Abs), "
+                f"showing the mix-shift impact across customer components."
+            )
+
+        return [
+            f"## {label} drivers (% Diff: Promo vs Baseline)",
+            *[funnel_order_sentence, funnel_item_sentence, component_sentence],
+            "",
+        ]
 
     lines = [
         "# Campaign Post-Mortem Summary (Phase 1)",
         "",
-        f"- Verdict: **{verdict}**",
-        f"- Confidence: **{confidence}**",
         f"- Baseline Period: {', '.join(meta.get('baseline_dates', []))}",
         f"- Promo Period: {', '.join(meta.get('promo_dates', []))}",
         "",
-        "## Deterministic winner checks",
     ]
-
-    for item in winner_assessment.get("comparisons", []):
-        uplift = item.get("uplift")
-        uplift_text = "N/A" if uplift is None else f"{uplift:.2%}"
-        lines.append(
-            f"- {item.get('kpi')}: testing-control uplift = {uplift_text} ({item.get('decision')})"
-        )
-
-    driver_analysis = payload.get("phase1_driver_analysis", {})
-    control_drivers = driver_analysis.get("control_group_drivers", {}).get("top_absolute", [])
-    testing_drivers = driver_analysis.get("testing_group_drivers", {}).get("top_absolute", [])
-    promo_impact_drivers = driver_analysis.get("promo_impact_drivers", {}).get("top_absolute", [])
-
-    lines.append("")
-    lines.append(f"## {control_group} drivers (% Diff: Promo vs Baseline)")
-    if control_drivers:
-        for item in control_drivers:
-            lines.append(f"- {item.get('kpi')}: {float(item.get('value', 0.0)):.2%}")
-    else:
-        lines.append("- N/A")
-
-    lines.append("")
-    lines.append(f"## {testing_group} drivers (% Diff: Promo vs Baseline)")
-    if testing_drivers:
-        for item in testing_drivers:
-            lines.append(f"- {item.get('kpi')}: {float(item.get('value', 0.0)):.2%}")
-    else:
-        lines.append("- N/A")
-
-    lines.append("")
-    lines.append("## Promo Impact drivers (%Diff gap: Group A - Group B)")
-    if promo_impact_drivers:
-        for item in promo_impact_drivers:
-            lines.append(f"- {item.get('kpi')}: {float(item.get('value', 0.0)):.2%}")
-    else:
-        lines.append("- N/A")
-
-    lines.append("")
+    lines.extend(_build_group_lines(control_df, "Group A", control_group))
+    lines.extend(_build_group_lines(testing_df, "Group B", testing_group))
     lines.append("---")
-    lines.append("Note: This summary is generated from deterministic metrics; no autonomous agent reasoning is used.")
-
+    lines.append("Note: This summary is generated from deterministic KPI rules and templates.")
     return "\n".join(lines)
