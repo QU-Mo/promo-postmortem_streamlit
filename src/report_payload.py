@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import json
+import os
+import re
 from typing import Any
+from urllib import error, request
 
 import pandas as pd
 
@@ -223,6 +227,27 @@ def build_phase1_summary_text(payload: dict[str, Any]) -> str:
             return "changed marginally"
         return up_word if value >= 0 else down_word
 
+    def _compute_component_pct_abs(
+        df: pd.DataFrame,
+        total_kpi: str,
+        existing_kpi: str,
+    ) -> tuple[float | None, float | None]:
+        total_baseline = _get_value(df, total_kpi, "Baseline Period")
+        total_promo = _get_value(df, total_kpi, "Promo Period")
+        existing_baseline = _get_value(df, existing_kpi, "Baseline Period")
+        existing_promo = _get_value(df, existing_kpi, "Promo Period")
+
+        if None in (total_baseline, total_promo, existing_baseline, existing_promo):
+            return None, None
+
+        baseline_component = float(total_baseline) - float(existing_baseline)
+        promo_component = float(total_promo) - float(existing_promo)
+        abs_diff = promo_component - baseline_component
+        if baseline_component == 0:
+            return None, abs_diff
+        pct_diff = abs_diff / baseline_component
+        return pct_diff, abs_diff
+
     def _build_group_lines(df: pd.DataFrame, label: str, group_name: str) -> list[str]:
         revenue_pct = _get_value(df, "total revenue", PROMO_VS_BASELINE_COL)
         absorb_pct = _get_value(df, "store absorption rate", PROMO_VS_BASELINE_COL)
@@ -233,8 +258,12 @@ def build_phase1_summary_text(payload: dict[str, Any]) -> str:
         existing_pct = _get_value(df, "existing revenue", PROMO_VS_BASELINE_COL)
         total_abs = _get_value(df, "total revenue", "Abs Diff (Promo - Baseline)")
         existing_abs = _get_value(df, "existing revenue", "Abs Diff (Promo - Baseline)")
-        new_non_existing_abs = None
-        if total_abs is not None and existing_abs is not None:
+        new_non_existing_pct, new_non_existing_abs = _compute_component_pct_abs(
+            df,
+            total_kpi="total revenue",
+            existing_kpi="existing revenue",
+        )
+        if new_non_existing_abs is None and total_abs is not None and existing_abs is not None:
             new_non_existing_abs = total_abs - existing_abs
 
         funnel_order_sentence = (
@@ -264,7 +293,8 @@ def build_phase1_summary_text(payload: dict[str, Any]) -> str:
                 f"- Component shift view: Total revenue {_signed_word(revenue_pct)} by {_fmt_pct(revenue_pct)} vs Baseline Period. "
                 f"Existing insider contribution (existing revenue) {existing_word} by {_fmt_pct(existing_pct)} "
                 f"(Abs: {_fmt_abs(existing_abs)}). In contrast, new + non-insider revenue "
-                f"(= total revenue - existing revenue) {new_non_word} by {_fmt_abs(new_non_existing_abs)} (Abs), "
+                f"(= total revenue - existing revenue) {new_non_word} by {_fmt_pct(new_non_existing_pct)} "
+                f"(Abs: {_fmt_abs(new_non_existing_abs)}), "
                 f"showing the mix-shift impact across customer components."
             )
 
@@ -286,3 +316,133 @@ def build_phase1_summary_text(payload: dict[str, Any]) -> str:
     lines.append("---")
     lines.append("Note: This summary is generated from deterministic KPI rules and templates.")
     return "\n".join(lines)
+
+
+def build_phase1_guardrail_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    meta = payload.get("meta", {})
+    return {
+        "baseline_dates": meta.get("baseline_dates", []),
+        "promo_dates": meta.get("promo_dates", []),
+        "control_group": meta.get("control_group", {}).get("name", "Group A"),
+        "testing_group": meta.get("testing_group", {}).get("name", "Group B"),
+        "required_headers": [
+            "## Group A drivers (% Diff: Promo vs Baseline)",
+            "## Group B drivers (% Diff: Promo vs Baseline)",
+        ],
+        "required_bullets_per_group": 3,
+        "constraints": {
+            "do_not_change_numbers": True,
+            "do_not_change_signs": True,
+            "do_not_change_causality_or_conclusions": True,
+            "do_not_add_or_remove_groups": True,
+        },
+    }
+
+
+def _extract_numeric_tokens(text: str) -> list[str]:
+    if not text:
+        return []
+    pattern = r"-?\d[\d,]*(?:\.\d+)?%?"
+    return sorted(re.findall(pattern, text))
+
+
+def _extract_group_section(summary_text: str, group_header: str) -> str:
+    if group_header not in summary_text:
+        return ""
+    start = summary_text.index(group_header)
+    next_headers = [h for h in ("## Group A drivers (% Diff: Promo vs Baseline)", "## Group B drivers (% Diff: Promo vs Baseline)") if h in summary_text and summary_text.index(h) > start]
+    if next_headers:
+        end = min(summary_text.index(h) for h in next_headers)
+        return summary_text[start:end]
+    return summary_text[start:]
+
+
+def _count_bullets(text: str) -> int:
+    return len([line for line in text.splitlines() if line.strip().startswith("- ")])
+
+
+def _validate_phase1_polish(raw_summary_text: str, polished_text: str) -> tuple[bool, str]:
+    required_headers = [
+        "## Group A drivers (% Diff: Promo vs Baseline)",
+        "## Group B drivers (% Diff: Promo vs Baseline)",
+    ]
+    for header in required_headers:
+        if header not in polished_text:
+            return False, f"missing header: {header}"
+
+    if _extract_numeric_tokens(raw_summary_text) != _extract_numeric_tokens(polished_text):
+        return False, "numeric tokens changed"
+
+    for header in required_headers:
+        group_section = _extract_group_section(polished_text, header)
+        if _count_bullets(group_section) != 3:
+            return False, f"invalid bullet count under {header}"
+
+    return True, "ok"
+
+
+def polish_phase1_summary_text(
+    raw_summary_text: str,
+    guardrail_payload: dict[str, Any],
+    *,
+    model: str = "gpt-4.1-mini",
+    temperature: float = 0.1,
+    timeout_seconds: int = 30,
+) -> tuple[str, str]:
+    """Polish deterministic Phase 1 summary with an LLM, then validate and fallback."""
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        return raw_summary_text, "fallback: missing OPENAI_API_KEY"
+
+    system_prompt = (
+        "You are a business writing editor.\n"
+        "Rewrite for clarity and consulting style.\n"
+        "Never change numbers, signs, causality, or conclusions.\n"
+        "Keep exactly 3 bullets per group: order-level, item-level, component-shift."
+    )
+    user_prompt = (
+        f"RAW_TEXT:\n{raw_summary_text}\n\n"
+        f"FACTS_JSON:\n{json.dumps(guardrail_payload, ensure_ascii=False, indent=2)}\n\n"
+        "STYLE: concise consulting tone, executive-ready, no buzzwords.\n\n"
+        "Output format:\n"
+        "Return markdown only.\n"
+        "Preserve headers:\n"
+        "## Group A drivers (% Diff: Promo vs Baseline)\n"
+        "## Group B drivers (% Diff: Promo vs Baseline)\n"
+    )
+
+    payload = {
+        "model": model,
+        "input": [
+            {"role": "system", "content": [{"type": "text", "text": system_prompt}]},
+            {"role": "user", "content": [{"type": "text", "text": user_prompt}]},
+        ],
+        "temperature": temperature,
+    }
+    req = request.Request(
+        "https://api.openai.com/v1/responses",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+        },
+        method="POST",
+    )
+
+    try:
+        with request.urlopen(req, timeout=timeout_seconds) as resp:
+            response_json = json.loads(resp.read().decode("utf-8"))
+    except error.HTTPError as exc:
+        return raw_summary_text, f"fallback: openai_http_error_{exc.code}"
+    except Exception:
+        return raw_summary_text, "fallback: openai_request_failed"
+
+    polished_text = response_json.get("output_text", "").strip()
+    if not polished_text:
+        return raw_summary_text, "fallback: empty_llm_output"
+
+    is_valid, reason = _validate_phase1_polish(raw_summary_text, polished_text)
+    if not is_valid:
+        return raw_summary_text, f"fallback: validation_failed_{reason}"
+
+    return polished_text, "success"
