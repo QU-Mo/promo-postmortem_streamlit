@@ -324,8 +324,8 @@ def build_phase1_summary_text(payload: dict[str, Any]) -> str:
                 )
 
 
-        impact_word = "tailwind" if absorb_sign > 0 else "headwind"
-        funnel_order_sentence = (
+            impact_word = "tailwind" if absorb_sign > 0 else "headwind"
+            funnel_order_sentence = (
                 f"* **Order-Level Funnel:** A notable {impact_word} was a {_fmt_abs_pct(absorb_pct)} "
                 f"{_dir_noun(absorb_pct)} in store absorption rate, {absorb_order_link}. {aov_logic}"
             )
