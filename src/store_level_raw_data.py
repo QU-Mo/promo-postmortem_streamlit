@@ -175,6 +175,10 @@ def apply_baseline_coefficient_to_store_level_raw_data(
         "total_RP_PC1",
         "total_promo_PC1",
         "total_existing_PC1",
+        "total_full_price_revenue",
+        "total_cost",
+        "total_RP_discount_euro",
+        "total_promo_discount_euro",
     ]
 
     for col in metric_cols:
