@@ -36,6 +36,7 @@ from promo_article_section_level_raw_data import (
     build_selected_categories_promo_non_promo_waterfall_table,
     build_selected_categories_quantity_waterfall_table,
     build_selected_categories_waterfall_table,
+    fetch_article_category_filter_options,
     fetch_promo_article_section_level_raw_data,
 )
 
@@ -45,6 +46,7 @@ st.set_page_config(page_title="Promo Post Mortem Calculator", layout="wide")
 
 
 ALL_ARTICLE_SEASONS = ["GANZJAHR", "SOMMER", "WINTER", "UNKNOWN"]
+ALL_ARTICLE_BRAND_GROUPS = ["UNKNOWN"]
 ALL_ARTICLE_SECTION_GROUP = [
     "D-ACCESSOIRES", "D-BAUKASTEN", "D-BLAZER", "D-BLUSE", "D-HOSE", "D-INDOOR-WESTE",
     "D-JACKE", "D-JUMPSUIT", "D-KLEID", "D-LEDER", "D-MANTEL", "D-MODESCHMUCK", "D-OUTDOOR-WESTE", "D-ROECKE",
@@ -77,6 +79,11 @@ ALL_ARTICLE_SECTIONS = [
 ]
 
 ALL_PRICE_TYPES = ["RP", "BP"]
+ALL_TRAFFIC_BUSINESS_UNITS = [
+    "PUC AT", "PUC BE", "PUC BG", "PUC CH", "PUC CZ", "PUC DE", "PUC HR", "PUC HU",
+    "PUC IT", "PUC LT", "PUC LV", "PUC NL", "PUC PL", "PUC RO", "PUC RS", "PUC SI", "PUC SK",
+]
+ALL_COUNTRIES = ["AT", "BE", "BG", "CH", "CZ", "DE", "HR", "HU", "IT", "LT", "LV", "NL", "PL", "RO", "RS", "SI", "SK"]
 
 def initialize_session_state() -> None:
     if "data" not in st.session_state:
@@ -132,6 +139,29 @@ def get_store_codes(order_company_name_short: str, order_channel: str, order_cou
         order_company_name_short=order_company_name_short,
         order_channel=order_channel,
         order_country=order_country,
+        bq_client=bq_client,
+    )
+
+@st.cache_data(show_spinner=False)
+def get_article_filter_options(
+    order_company_name_short: str,
+    order_channel: str,
+    order_country: str,
+    selected_dates: list[date],
+) -> dict[str, list[str]]:
+    if not selected_dates:
+        return {
+            "article_section_groups": ALL_ARTICLE_SECTION_GROUP,
+            "article_sections": ALL_ARTICLE_SECTIONS,
+            "article_seasons": ALL_ARTICLE_SEASONS,
+            "article_brand_groups": ALL_ARTICLE_BRAND_GROUPS,
+        }
+    bq_client = bigquery.Client()
+    return fetch_article_category_filter_options(
+        order_company_name_short=order_company_name_short,
+        order_channel=order_channel,
+        order_country=order_country,
+        selected_dates=selected_dates,
         bq_client=bq_client,
     )
 
@@ -573,13 +603,13 @@ st.sidebar.header("Configuration")
 
 traffic_business_unit = st.sidebar.selectbox(
     "traffic_business_unit",
-    options=["PUC DE", "PUC AT"],
+    options=ALL_TRAFFIC_BUSINESS_UNITS,
 )
-traffic_country = st.sidebar.selectbox("traffic_country", options=["DE", "AT"])
+traffic_country = st.sidebar.selectbox("traffic_country", options=ALL_COUNTRIES)
 
 order_company_name_short = st.sidebar.text_input("order_company_name_short", value="PUC")
 order_channel = st.sidebar.text_input("order_channel", value="STATIONARY")
-order_country = st.sidebar.selectbox("order_country", options=["DE", "AT"])
+order_country = st.sidebar.selectbox("order_country", options=ALL_COUNTRIES)
 vat = st.sidebar.number_input("VAT", min_value=0.0, value=1.19, step=0.01, format="%.2f")
 baseline_coefficient = st.sidebar.number_input("baseline coefficient", min_value=0.0, value=1.0, step=0.01, format="%.2f")
 
@@ -658,35 +688,55 @@ else:
 
 
 selected_dates = sorted(set(baseline_dates + promo_dates))
+article_filter_options = get_article_filter_options(
+    order_company_name_short=order_company_name_short,
+    order_channel=order_channel,
+    order_country=order_country,
+    selected_dates=selected_dates,
+)
+article_section_group_options = article_filter_options.get("article_section_groups") or ALL_ARTICLE_SECTION_GROUP
+article_section_options = article_filter_options.get("article_sections") or ALL_ARTICLE_SECTIONS
+article_season_options = article_filter_options.get("article_seasons") or ALL_ARTICLE_SEASONS
+article_brand_group_options = article_filter_options.get("article_brand_groups") or ALL_ARTICLE_BRAND_GROUPS
 
 article_section_group_select_all = st.sidebar.checkbox("Select all - article_section_group", value=True)
 if article_section_group_select_all:
-    article_section_groups = ALL_ARTICLE_SECTION_GROUP
+    article_section_groups = article_section_group_options
 else:
     article_section_groups = st.sidebar.multiselect(
         "article_section_group",
-        options=ALL_ARTICLE_SECTION_GROUP,
-        default=["D-HOSE"],
+        options=article_section_group_options,
+        default=article_section_group_options[: min(2, len(article_section_group_options))],
     )
 
 article_section_select_all = st.sidebar.checkbox("Select all - article_section", value=True)
 if article_section_select_all:
-    article_sections = ALL_ARTICLE_SECTIONS
+    article_sections = article_section_options
 else:
     article_sections = st.sidebar.multiselect(
         "article_section",
-        options=ALL_ARTICLE_SECTIONS,
-        default=["HOSE","JEANS"],
+        options=article_section_options,
+        default=article_section_options[: min(2, len(article_section_options))],
     )
 
 article_season_select_all = st.sidebar.checkbox("Select all - article_season", value=True)
 if article_season_select_all:
-    article_seasons = ALL_ARTICLE_SEASONS
+    article_seasons = article_season_options
 else:
     article_seasons = st.sidebar.multiselect(
         "article_season",
-        options=ALL_ARTICLE_SEASONS,
-        default=["SOMMER"],
+        options=article_season_options,
+        default=article_season_options[:1],
+    )
+
+article_brand_group_select_all = st.sidebar.checkbox("Select all - article_brand_group", value=True)
+if article_brand_group_select_all:
+    article_brand_groups = article_brand_group_options
+else:
+    article_brand_groups = st.sidebar.multiselect(
+        "article_brand_group",
+        options=article_brand_group_options,
+        default=article_brand_group_options[: min(2, len(article_brand_group_options))],
     )
 
 price_type_select_all = st.sidebar.checkbox("Select all - price_type", value=True)
@@ -725,6 +775,7 @@ ui_selection_payload = {
     "article_section_groups": article_section_groups,
     "article_sections": article_sections,
     "article_seasons": article_seasons,
+    "article_brand_groups": article_brand_groups,
     "price_types": price_types,
 }
 
@@ -782,6 +833,7 @@ if st.sidebar.button("Run"):
             article_section_groups=article_section_groups,
             article_sections=article_sections,
             article_seasons=article_seasons,
+            article_brand_groups=article_brand_groups,
             price_types=price_types,
             bq_client=bq_client,
         )
@@ -874,9 +926,21 @@ if st.session_state.get("group_tables") or st.session_state.get("category_group_
         st.caption(f"Promo period: {format_date_list(promo_dates)}")
 
 if st.session_state.get("group_tables"):
+    st.markdown(
+        """
+        <style>
+            .st-key-include_sunday_funnel_toggle label p {
+                font-size: 1.15rem !important;
+                font-weight: 700 !important;
+            }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
     include_sunday_funnel_toggle = st.toggle(
         "Store Level Funnel Tables - include Sunday",
         value=False,
+        key="include_sunday_funnel_toggle",
     )
 
     subset_tables = st.session_state["group_tables"].get("subset_tables", {})
@@ -1246,12 +1310,14 @@ if st.session_state.get("category_group_tables"):
         baseline_dates=baseline_dates,
         promo_dates=promo_dates,
         vat=vat,
+        baseline_coefficient=baseline_coefficient,
     )
     category_testing_table = build_selected_categories_funnel_table(
         group_df=st.session_state["category_group_tables"].get(selected_testing_group, pd.DataFrame()),
         baseline_dates=baseline_dates,
         promo_dates=promo_dates,
         vat=vat,
+        baseline_coefficient=baseline_coefficient,
     )
 
     category_funnel_tables = {
@@ -1558,6 +1624,74 @@ if st.session_state.get("category_group_tables"):
         )
         st.markdown("**Waterfall - Selected Catrgories (article section) PC1 Bridge**")
         _render_waterfall_pair(section_control_pc1_waterfall, section_testing_pc1_waterfall, "PC1")
+
+    article_brand_group_toggle = st.toggle(
+        "Waterfall - Selected Categories (article brand group)",
+        value=False,
+    )
+    if article_brand_group_toggle:
+        brand_group_control_revenue_waterfall = build_selected_categories_dimension_waterfall_table(
+            group_df=st.session_state["category_group_tables"].get(selected_control_group, pd.DataFrame()),
+            baseline_dates=baseline_dates,
+            promo_dates=promo_dates,
+            metric_col="total_revenue",
+            dimension_col="article_brand_group",
+            selected_dimensions=article_brand_groups,
+            metric_label="revenue",
+        )
+        brand_group_testing_revenue_waterfall = build_selected_categories_dimension_waterfall_table(
+            group_df=st.session_state["category_group_tables"].get(selected_testing_group, pd.DataFrame()),
+            baseline_dates=baseline_dates,
+            promo_dates=promo_dates,
+            metric_col="total_revenue",
+            dimension_col="article_brand_group",
+            selected_dimensions=article_brand_groups,
+            metric_label="revenue",
+        )
+        st.markdown("**Waterfall - Selected Categories (article brand group) Revenue Bridge**")
+        _render_waterfall_pair(brand_group_control_revenue_waterfall, brand_group_testing_revenue_waterfall, "Revenue")
+
+        brand_group_control_quantity_waterfall = build_selected_categories_dimension_waterfall_table(
+            group_df=st.session_state["category_group_tables"].get(selected_control_group, pd.DataFrame()),
+            baseline_dates=baseline_dates,
+            promo_dates=promo_dates,
+            metric_col="total_quantity",
+            dimension_col="article_brand_group",
+            selected_dimensions=article_brand_groups,
+            metric_label="quantity",
+        )
+        brand_group_testing_quantity_waterfall = build_selected_categories_dimension_waterfall_table(
+            group_df=st.session_state["category_group_tables"].get(selected_testing_group, pd.DataFrame()),
+            baseline_dates=baseline_dates,
+            promo_dates=promo_dates,
+            metric_col="total_quantity",
+            dimension_col="article_brand_group",
+            selected_dimensions=article_brand_groups,
+            metric_label="quantity",
+        )
+        st.markdown("**Waterfall - Selected Categories (article brand group) Quantity Bridge**")
+        _render_waterfall_pair(brand_group_control_quantity_waterfall, brand_group_testing_quantity_waterfall, "Quantity")
+
+        brand_group_control_pc1_waterfall = build_selected_categories_dimension_waterfall_table(
+            group_df=st.session_state["category_group_tables"].get(selected_control_group, pd.DataFrame()),
+            baseline_dates=baseline_dates,
+            promo_dates=promo_dates,
+            metric_col="total_PC1",
+            dimension_col="article_brand_group",
+            selected_dimensions=article_brand_groups,
+            metric_label="PC1",
+        )
+        brand_group_testing_pc1_waterfall = build_selected_categories_dimension_waterfall_table(
+            group_df=st.session_state["category_group_tables"].get(selected_testing_group, pd.DataFrame()),
+            baseline_dates=baseline_dates,
+            promo_dates=promo_dates,
+            metric_col="total_PC1",
+            dimension_col="article_brand_group",
+            selected_dimensions=article_brand_groups,
+            metric_label="PC1",
+        )
+        st.markdown("**Waterfall - Selected Categories (article brand group) PC1 Bridge**")
+        _render_waterfall_pair(brand_group_control_pc1_waterfall, brand_group_testing_pc1_waterfall, "PC1")
 
 
 
