@@ -77,6 +77,11 @@ ALL_ARTICLE_SECTIONS = [
 ]
 
 ALL_PRICE_TYPES = ["RP", "BP"]
+ALL_TRAFFIC_BUSINESS_UNITS = [
+    "PUC AT", "PUC BE", "PUC BG", "PUC CH", "PUC CZ", "PUC DE", "PUC HR", "PUC HU",
+    "PUC IT", "PUC LT", "PUC LV", "PUC NL", "PUC PL", "PUC RO", "PUC RS", "PUC SI", "PUC SK",
+]
+ALL_COUNTRIES = ["AT", "BE", "BG", "CH", "CZ", "DE", "HR", "HU", "IT", "LT", "LV", "NL", "PL", "RO", "RS", "SI", "SK"]
 
 def initialize_session_state() -> None:
     if "data" not in st.session_state:
@@ -573,13 +578,13 @@ st.sidebar.header("Configuration")
 
 traffic_business_unit = st.sidebar.selectbox(
     "traffic_business_unit",
-    options=["PUC DE", "PUC AT"],
+    options=ALL_TRAFFIC_BUSINESS_UNITS,
 )
-traffic_country = st.sidebar.selectbox("traffic_country", options=["DE", "AT"])
+traffic_country = st.sidebar.selectbox("traffic_country", options=ALL_COUNTRIES)
 
 order_company_name_short = st.sidebar.text_input("order_company_name_short", value="PUC")
 order_channel = st.sidebar.text_input("order_channel", value="STATIONARY")
-order_country = st.sidebar.selectbox("order_country", options=["DE", "AT"])
+order_country = st.sidebar.selectbox("order_country", options=ALL_COUNTRIES)
 vat = st.sidebar.number_input("VAT", min_value=0.0, value=1.19, step=0.01, format="%.2f")
 baseline_coefficient = st.sidebar.number_input("baseline coefficient", min_value=0.0, value=1.0, step=0.01, format="%.2f")
 
@@ -874,9 +879,21 @@ if st.session_state.get("group_tables") or st.session_state.get("category_group_
         st.caption(f"Promo period: {format_date_list(promo_dates)}")
 
 if st.session_state.get("group_tables"):
+    st.markdown(
+        """
+        <style>
+            .st-key-include_sunday_funnel_toggle label p {
+                font-size: 1.15rem !important;
+                font-weight: 700 !important;
+            }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
     include_sunday_funnel_toggle = st.toggle(
         "Store Level Funnel Tables - include Sunday",
         value=False,
+        key="include_sunday_funnel_toggle",
     )
 
     subset_tables = st.session_state["group_tables"].get("subset_tables", {})
