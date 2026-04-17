@@ -1310,12 +1310,14 @@ if st.session_state.get("category_group_tables"):
         baseline_dates=baseline_dates,
         promo_dates=promo_dates,
         vat=vat,
+        baseline_coefficient=baseline_coefficient,
     )
     category_testing_table = build_selected_categories_funnel_table(
         group_df=st.session_state["category_group_tables"].get(selected_testing_group, pd.DataFrame()),
         baseline_dates=baseline_dates,
         promo_dates=promo_dates,
         vat=vat,
+        baseline_coefficient=baseline_coefficient,
     )
 
     category_funnel_tables = {
