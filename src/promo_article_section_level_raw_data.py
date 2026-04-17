@@ -30,6 +30,7 @@ def build_promo_article_section_level_raw_data_sql(
       channel,
       LPAD(CAST(tenant AS STRING), 4, '0') AS store_code,
       store_name,
+      CAST(mco.order_id AS STRING) AS order_id,
       COALESCE(article_section_group, 'UNKNOWN') AS article_section_group,
       COALESCE(article_section, 'UNKNOWN') AS article_section,
       COALESCE(article_season, 'UNKNOWN') AS article_season,
@@ -61,7 +62,7 @@ def build_promo_article_section_level_raw_data_sql(
         @promo_checks_is_empty
         OR CASE WHEN has_promotion THEN 'promo' ELSE 'non-promo' END IN UNNEST(@promo_checks)
       )
-    GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12,13
+    GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12,13,14
     """
 
     store_codes = store_codes or []
@@ -185,8 +186,9 @@ def build_selected_categories_funnel_table(
     baseline_df = working_df[working_df["ordered_date"].isin(baseline_dates)]
     promo_df = working_df[working_df["ordered_date"].isin(promo_dates)]
 
-    def _metrics(df: pd.DataFrame) -> dict[str, float]:
+    def _metrics(df: pd.DataFrame, order_scale: float = 1.0) -> dict[str, float]:
         revenue = pd.to_numeric(df["total_revenue"], errors="coerce")
+        total_orders = float(df["order_id"].dropna().nunique()) * order_scale if "order_id" in df.columns else float("nan")
         total_quantity = pd.to_numeric(df["total_quantity"], errors="coerce").sum(min_count=1)
         total_revenue = revenue.sum(min_count=1)
         total_pc1 = pd.to_numeric(df["total_PC1"], errors="coerce").sum(min_count=1)
@@ -206,6 +208,8 @@ def build_selected_categories_funnel_table(
         existing_pc1 = pc1[df["insider_customer_type"] == "EXISTING"].sum(min_count=1)
 
         return {
+            "total orders (selected categories)": total_orders,
+            "AOV (selected categories)": total_revenue / total_orders if total_orders else float("nan"),
             "total quantity (selected categories)": total_quantity,
             "price per item (selected categories)": total_revenue / total_quantity if total_quantity else float("nan"),
             "total revenue (selected categories)": total_revenue,
@@ -228,11 +232,13 @@ def build_selected_categories_funnel_table(
             "existing revenue share (selected categories)": existing_revenue / total_revenue if total_revenue else float("nan"),
         }
 
-    baseline_metrics = _metrics(baseline_df)
+    baseline_metrics = _metrics(baseline_df, order_scale=baseline_coefficient)
     promo_metrics = _metrics(promo_df)
 
     rows = []
     for kpi in [
+        "total orders (selected categories)",
+        "AOV (selected categories)",
         "total quantity (selected categories)",
         "price per item (selected categories)",
         "total revenue (selected categories)",
