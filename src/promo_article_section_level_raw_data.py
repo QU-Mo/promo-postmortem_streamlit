@@ -15,6 +15,7 @@ def build_promo_article_section_level_raw_data_sql(
     article_section_groups: list[str] | None = None,
     article_sections: list[str] | None = None,
     article_seasons: list[str] | None = None,
+    article_brand_groups: list[str] | None = None,
     insider_customer_types: list[str] | None = None,
     price_types: list[str] | None = None,
     promo_checks: list[str] | None = None,
@@ -32,6 +33,7 @@ def build_promo_article_section_level_raw_data_sql(
       COALESCE(article_section_group, 'UNKNOWN') AS article_section_group,
       COALESCE(article_section, 'UNKNOWN') AS article_section,
       COALESCE(article_season, 'UNKNOWN') AS article_season,
+      COALESCE(article_brand_group, 'UNKNOWN') AS article_brand_group,
       insider_customer_type,
       CASE WHEN article_price_red_eur IS NOT NULL THEN 'RP' ELSE 'BP' END AS price_type,
       CASE WHEN has_promotion THEN 'promo' ELSE 'non-promo' END AS promo_check,
@@ -49,6 +51,7 @@ def build_promo_article_section_level_raw_data_sql(
       AND (@article_section_groups_is_empty OR COALESCE(article_section_group, 'UNKNOWN') IN UNNEST(@article_section_groups))
       AND (@article_sections_is_empty OR COALESCE(article_section, 'UNKNOWN') IN UNNEST(@article_sections))
       AND (@article_seasons_is_empty OR COALESCE(article_season, 'UNKNOWN') IN UNNEST(@article_seasons))
+      AND (@article_brand_groups_is_empty OR COALESCE(article_brand_group, 'UNKNOWN') IN UNNEST(@article_brand_groups))
       AND (@insider_customer_types_is_empty OR insider_customer_type IN UNNEST(@insider_customer_types))
       AND (
         @price_types_is_empty
@@ -58,13 +61,14 @@ def build_promo_article_section_level_raw_data_sql(
         @promo_checks_is_empty
         OR CASE WHEN has_promotion THEN 'promo' ELSE 'non-promo' END IN UNNEST(@promo_checks)
       )
-    GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12
+    GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12,13
     """
 
     store_codes = store_codes or []
     article_section_groups = article_section_groups or []
     article_sections = article_sections or []
     article_seasons = article_seasons or []
+    article_brand_groups = article_brand_groups or []
     insider_customer_types = insider_customer_types or []
     price_types = price_types or []
     promo_checks = promo_checks or []
@@ -78,6 +82,7 @@ def build_promo_article_section_level_raw_data_sql(
         bigquery.ArrayQueryParameter("article_section_groups", "STRING", article_section_groups),
         bigquery.ArrayQueryParameter("article_sections", "STRING", article_sections),
         bigquery.ArrayQueryParameter("article_seasons", "STRING", article_seasons),
+        bigquery.ArrayQueryParameter("article_brand_groups", "STRING", article_brand_groups),
         bigquery.ArrayQueryParameter("insider_customer_types", "STRING", insider_customer_types),
         bigquery.ArrayQueryParameter("price_types", "STRING", price_types),
         bigquery.ArrayQueryParameter("promo_checks", "STRING", promo_checks),
@@ -85,6 +90,7 @@ def build_promo_article_section_level_raw_data_sql(
         bigquery.ScalarQueryParameter("article_section_groups_is_empty", "BOOL", len(article_section_groups) == 0),
         bigquery.ScalarQueryParameter("article_sections_is_empty", "BOOL", len(article_sections) == 0),
         bigquery.ScalarQueryParameter("article_seasons_is_empty", "BOOL", len(article_seasons) == 0),
+        bigquery.ScalarQueryParameter("article_brand_groups_is_empty", "BOOL", len(article_brand_groups) == 0),
         bigquery.ScalarQueryParameter("insider_customer_types_is_empty", "BOOL", len(insider_customer_types) == 0),
         bigquery.ScalarQueryParameter("price_types_is_empty", "BOOL", len(price_types) == 0),
         bigquery.ScalarQueryParameter("promo_checks_is_empty", "BOOL", len(promo_checks) == 0),
@@ -129,6 +135,7 @@ def fetch_promo_article_section_level_raw_data(
     article_section_groups: list[str] | None = None,
     article_sections: list[str] | None = None,
     article_seasons: list[str] | None = None,
+    article_brand_groups: list[str] | None = None,
     insider_customer_types: list[str] | None = None,
     price_types: list[str] | None = None,
     promo_checks: list[str] | None = None,
@@ -145,6 +152,7 @@ def fetch_promo_article_section_level_raw_data(
         article_section_groups=article_section_groups,
         article_sections=article_sections,
         article_seasons=article_seasons,
+        article_brand_groups=article_brand_groups,
         insider_customer_types=insider_customer_types,
         price_types=price_types,
         promo_checks=promo_checks,
@@ -623,7 +631,8 @@ def build_article_category_filter_options_sql(
     SELECT DISTINCT
       COALESCE(article_section_group, 'UNKNOWN') AS article_section_group,
       COALESCE(article_section, 'UNKNOWN') AS article_section,
-      COALESCE(article_season, 'UNKNOWN') AS article_season
+      COALESCE(article_season, 'UNKNOWN') AS article_season,
+      COALESCE(article_brand_group, 'UNKNOWN') AS article_brand_group
     FROM `{order_table}` AS mco
     LEFT JOIN UNNEST(order_items) AS oi
     WHERE channel = @order_channel
@@ -662,9 +671,11 @@ def fetch_article_category_filter_options(
             "article_section_groups": [],
             "article_sections": [],
             "article_seasons": [],
+            "article_brand_groups": [],
         }
     return {
         "article_section_groups": sorted(df["article_section_group"].dropna().astype(str).unique().tolist()),
         "article_sections": sorted(df["article_section"].dropna().astype(str).unique().tolist()),
         "article_seasons": sorted(df["article_season"].dropna().astype(str).unique().tolist()),
+        "article_brand_groups": sorted(df["article_brand_group"].dropna().astype(str).unique().tolist()),
     }
