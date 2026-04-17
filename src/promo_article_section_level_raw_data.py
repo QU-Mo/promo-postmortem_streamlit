@@ -173,6 +173,7 @@ def build_selected_categories_funnel_table(
     baseline_dates: list[date],
     promo_dates: list[date],
     vat: float,
+    baseline_coefficient: float = 1.0,
 ) -> pd.DataFrame:
 
     if group_df.empty:
