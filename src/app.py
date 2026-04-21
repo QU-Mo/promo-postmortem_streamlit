@@ -472,6 +472,33 @@ def resolve_group_store_selection(
     return chosen_stores
 
 
+def resolve_dimension_selection(
+    dimension_name: str,
+    options: list[str],
+    key_prefix: str,
+) -> tuple[bool, list[str]]:
+    select_all = st.sidebar.checkbox(f"Select all - {dimension_name}", value=True, key=f"{key_prefix}_all")
+    if select_all:
+        return True, options
+
+    selection_mode = st.sidebar.radio(
+        f"{dimension_name} selection mode",
+        options=["Include", "Except"],
+        horizontal=True,
+        key=f"{key_prefix}_mode",
+    )
+    chosen_values = st.sidebar.multiselect(
+        dimension_name,
+        options=options,
+        default=[],
+        key=f"{key_prefix}_values",
+    )
+    if selection_mode == "Except":
+        excluded = set(chosen_values)
+        return False, [item for item in options if item not in excluded]
+    return False, chosen_values
+
+
 
 def build_selected_categories_waterfall_chart(
     waterfall_df: pd.DataFrame,
@@ -604,12 +631,21 @@ st.sidebar.header("Configuration")
 traffic_business_unit = st.sidebar.selectbox(
     "traffic_business_unit",
     options=ALL_TRAFFIC_BUSINESS_UNITS,
+    index=ALL_TRAFFIC_BUSINESS_UNITS.index("PUC DE"),
 )
-traffic_country = st.sidebar.selectbox("traffic_country", options=ALL_COUNTRIES)
+traffic_country = st.sidebar.selectbox(
+    "traffic_country",
+    options=ALL_COUNTRIES,
+    index=ALL_COUNTRIES.index("DE"),
+)
 
 order_company_name_short = st.sidebar.text_input("order_company_name_short", value="PUC")
 order_channel = st.sidebar.text_input("order_channel", value="STATIONARY")
-order_country = st.sidebar.selectbox("order_country", options=ALL_COUNTRIES)
+order_country = st.sidebar.selectbox(
+    "order_country",
+    options=ALL_COUNTRIES,
+    index=ALL_COUNTRIES.index("DE"),
+)
 vat = st.sidebar.number_input("VAT", min_value=0.0, value=1.19, step=0.01, format="%.2f")
 baseline_coefficient = st.sidebar.number_input("baseline coefficient", min_value=0.0, value=1.0, step=0.01, format="%.2f")
 
@@ -699,45 +735,26 @@ article_section_options = article_filter_options.get("article_sections") or ALL_
 article_season_options = article_filter_options.get("article_seasons") or ALL_ARTICLE_SEASONS
 article_brand_group_options = article_filter_options.get("article_brand_groups") or ALL_ARTICLE_BRAND_GROUPS
 
-article_section_group_select_all = st.sidebar.checkbox("Select all - article_section_group", value=True)
-if article_section_group_select_all:
-    article_section_groups = article_section_group_options
-else:
-    article_section_groups = st.sidebar.multiselect(
-        "article_section_group",
-        options=article_section_group_options,
-        default=article_section_group_options[: min(2, len(article_section_group_options))],
-    )
-
-article_section_select_all = st.sidebar.checkbox("Select all - article_section", value=True)
-if article_section_select_all:
-    article_sections = article_section_options
-else:
-    article_sections = st.sidebar.multiselect(
-        "article_section",
-        options=article_section_options,
-        default=article_section_options[: min(2, len(article_section_options))],
-    )
-
-article_season_select_all = st.sidebar.checkbox("Select all - article_season", value=True)
-if article_season_select_all:
-    article_seasons = article_season_options
-else:
-    article_seasons = st.sidebar.multiselect(
-        "article_season",
-        options=article_season_options,
-        default=article_season_options[:1],
-    )
-
-article_brand_group_select_all = st.sidebar.checkbox("Select all - article_brand_group", value=True)
-if article_brand_group_select_all:
-    article_brand_groups = article_brand_group_options
-else:
-    article_brand_groups = st.sidebar.multiselect(
-        "article_brand_group",
-        options=article_brand_group_options,
-        default=article_brand_group_options[: min(2, len(article_brand_group_options))],
-    )
+article_section_group_select_all, article_section_groups = resolve_dimension_selection(
+    "article_section_group",
+    article_section_group_options,
+    "article_section_group",
+)
+article_section_select_all, article_sections = resolve_dimension_selection(
+    "article_section",
+    article_section_options,
+    "article_section",
+)
+article_season_select_all, article_seasons = resolve_dimension_selection(
+    "article_season",
+    article_season_options,
+    "article_season",
+)
+article_brand_group_select_all, article_brand_groups = resolve_dimension_selection(
+    "article_brand_group",
+    article_brand_group_options,
+    "article_brand_group",
+)
 
 price_type_select_all = st.sidebar.checkbox("Select all - price_type", value=True)
 if price_type_select_all:
@@ -759,10 +776,22 @@ ui_selection_payload = {
     "vat": vat,
     "baseline_coefficient": baseline_coefficient,
     "groups": {
-        "Group 1": control_group_1,
-        "Group 2": control_group_2,
-        "Group 3": testing_group_1,
-        "Group 4": testing_group_2,
+        "Group 1": {
+            "select all stores": st.session_state.get("group_1_all", True),
+            "stores": [] if st.session_state.get("group_1_all", True) else control_group_1,
+        },
+        "Group 2": {
+            "select all stores": st.session_state.get("group_2_all", True),
+            "stores": [] if st.session_state.get("group_2_all", True) else control_group_2,
+        },
+        "Group 3": {
+            "select all stores": st.session_state.get("group_3_all", True),
+            "stores": [] if st.session_state.get("group_3_all", True) else testing_group_1,
+        },
+        "Group 4": {
+            "select all stores": st.session_state.get("group_4_all", True),
+            "stores": [] if st.session_state.get("group_4_all", True) else testing_group_2,
+        },
     },
     "group_descriptions": {
         "Group 1": control_group_1_note,
@@ -772,10 +801,22 @@ ui_selection_payload = {
     },
     "baseline_dates": [d.isoformat() for d in baseline_dates],
     "promo_dates": [d.isoformat() for d in promo_dates],
-    "article_section_groups": article_section_groups,
-    "article_sections": article_sections,
-    "article_seasons": article_seasons,
-    "article_brand_groups": article_brand_groups,
+    "article_section_groups": {
+        "select all article_section_group": article_section_group_select_all,
+        "article_section_group": [] if article_section_group_select_all else article_section_groups,
+    },
+    "article_sections": {
+        "select all article_section": article_section_select_all,
+        "article_section": [] if article_section_select_all else article_sections,
+    },
+    "article_seasons": {
+        "select all article_season": article_season_select_all,
+        "article_season": [] if article_season_select_all else article_seasons,
+    },
+    "article_brand_groups": {
+        "select all article_brand_group": article_brand_group_select_all,
+        "article_brand_group": [] if article_brand_group_select_all else article_brand_groups,
+    },
     "price_types": price_types,
 }
 
