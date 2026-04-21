@@ -778,19 +778,51 @@ ui_selection_payload = {
     "groups": {
         "Group 1": {
             "select all stores": st.session_state.get("group_1_all", True),
-            "stores": [] if st.session_state.get("group_1_all", True) else control_group_1,
+            **(
+                {}
+                if st.session_state.get("group_1_all", True)
+                else (
+                    {"except": st.session_state.get("group_1_stores", [])}
+                    if st.session_state.get("group_1_mode", "Include") == "Except"
+                    else {"include": st.session_state.get("group_1_stores", [])}
+                )
+            ),
         },
         "Group 2": {
             "select all stores": st.session_state.get("group_2_all", True),
-            "stores": [] if st.session_state.get("group_2_all", True) else control_group_2,
+            **(
+                {}
+                if st.session_state.get("group_2_all", True)
+                else (
+                    {"except": st.session_state.get("group_2_stores", [])}
+                    if st.session_state.get("group_2_mode", "Include") == "Except"
+                    else {"include": st.session_state.get("group_2_stores", [])}
+                )
+            ),
         },
         "Group 3": {
             "select all stores": st.session_state.get("group_3_all", True),
-            "stores": [] if st.session_state.get("group_3_all", True) else testing_group_1,
+            **(
+                {}
+                if st.session_state.get("group_3_all", True)
+                else (
+                    {"except": st.session_state.get("group_3_stores", [])}
+                    if st.session_state.get("group_3_mode", "Include") == "Except"
+                    else {"include": st.session_state.get("group_3_stores", [])}
+                )
+            ),
         },
         "Group 4": {
             "select all stores": st.session_state.get("group_4_all", True),
-            "stores": [] if st.session_state.get("group_4_all", True) else testing_group_2,
+            **(
+                {}
+                if st.session_state.get("group_4_all", True)
+                else (
+                    {"except": st.session_state.get("group_4_stores", [])}
+                    if st.session_state.get("group_4_mode", "Include") == "Except"
+                    else {"include": st.session_state.get("group_4_stores", [])}
+                )
+            ),
         },
     },
     "group_descriptions": {
@@ -803,19 +835,51 @@ ui_selection_payload = {
     "promo_dates": [d.isoformat() for d in promo_dates],
     "article_section_groups": {
         "select all article_section_group": article_section_group_select_all,
-        "article_section_group": [] if article_section_group_select_all else article_section_groups,
+        **(
+            {}
+            if article_section_group_select_all
+            else (
+                {"except": st.session_state.get("article_section_group_values", [])}
+                if st.session_state.get("article_section_group_mode", "Include") == "Except"
+                else {"include": st.session_state.get("article_section_group_values", [])}
+            )
+        ),
     },
     "article_sections": {
         "select all article_section": article_section_select_all,
-        "article_section": [] if article_section_select_all else article_sections,
+        **(
+            {}
+            if article_section_select_all
+            else (
+                {"except": st.session_state.get("article_section_values", [])}
+                if st.session_state.get("article_section_mode", "Include") == "Except"
+                else {"include": st.session_state.get("article_section_values", [])}
+            )
+        ),
     },
     "article_seasons": {
         "select all article_season": article_season_select_all,
-        "article_season": [] if article_season_select_all else article_seasons,
+        **(
+            {}
+            if article_season_select_all
+            else (
+                {"except": st.session_state.get("article_season_values", [])}
+                if st.session_state.get("article_season_mode", "Include") == "Except"
+                else {"include": st.session_state.get("article_season_values", [])}
+            )
+        ),
     },
     "article_brand_groups": {
         "select all article_brand_group": article_brand_group_select_all,
-        "article_brand_group": [] if article_brand_group_select_all else article_brand_groups,
+        **(
+            {}
+            if article_brand_group_select_all
+            else (
+                {"except": st.session_state.get("article_brand_group_values", [])}
+                if st.session_state.get("article_brand_group_mode", "Include") == "Except"
+                else {"include": st.session_state.get("article_brand_group_values", [])}
+            )
+        ),
     },
     "price_types": price_types,
 }
