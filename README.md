@@ -149,6 +149,14 @@ promo-postmortem_streamlit/
 ### Q3: How do I copy tables into Excel?
 - Use the “📋 Copy (Excel)” button above each table, then paste directly.
 
+### Q4: Which category option lists come from BigQuery vs hardcoded UI lists?
+- `article_section_group`, `article_section`, `article_season`, `article_brand_group`:
+  - The sidebar options are fetched dynamically from BigQuery for the selected Baseline+Promo date set (`fetch_article_category_filter_options`).
+  - The `ALL_*` lists in `src/app.py` are only fallback values when date selection is empty or the query returns no rows.
+  - Therefore, these fallback lists are not required for normal successful-query scenarios, but they are still used as resiliency defaults.
+- `price_type`:
+  - The sidebar options are currently hardcoded to `ALL_PRICE_TYPES = ["RP", "BP"]` in `src/app.py`.
+  - They are not dynamically fetched by the UI options query.
 ---
 
 ## 8. Maintenance Suggestions
