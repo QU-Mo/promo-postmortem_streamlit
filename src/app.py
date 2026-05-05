@@ -56,9 +56,13 @@ ALL_ARTICLE_SECTIONS = [
 
 ALL_PRICE_TYPES = ["RP", "BP"]
 ALL_TRAFFIC_BUSINESS_UNITS = [
+    "ANS CZ", "ANS DE", "ANS HR", "ANS RO",
     "PUC AT", "PUC BE", "PUC BG", "PUC CH", "PUC CZ", "PUC DE", "PUC HR", "PUC HU",
     "PUC IT", "PUC LT", "PUC LV", "PUC NL", "PUC PL", "PUC RO", "PUC RS", "PUC SI", "PUC SK",
 ]
+
+ALL_ORDER_COMPANY_NAME_SHORT = ["PUC", "ANS"]
+
 ALL_COUNTRIES = ["AT", "BE", "BG", "CH", "CZ", "DE", "HR", "HU", "IT", "LT", "LV", "NL", "PL", "RO", "RS", "SI", "SK"]
 
 def initialize_session_state() -> None:
@@ -615,7 +619,11 @@ traffic_country = st.sidebar.selectbox(
     index=ALL_COUNTRIES.index("DE"),
 )
 
-order_company_name_short = st.sidebar.text_input("order_company_name_short", value="PUC")
+order_company_name_short = st.sidebar.selectbox(
+    "order_company_name_short",
+    options=ALL_ORDER_COMPANY_NAME_SHORT,
+    index=ALL_ORDER_COMPANY_NAME_SHORT.index("PUC"),
+)
 order_channel = st.sidebar.text_input("order_channel", value="STATIONARY")
 order_country = st.sidebar.selectbox(
     "order_country",
