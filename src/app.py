@@ -3,6 +3,7 @@ import streamlit.components.v1 as components
 from datetime import date, timedelta
 import json
 import base64
+import concurrent.futures
 from google.cloud import bigquery
 import pandas as pd
 import altair as alt
@@ -886,19 +887,48 @@ if st.sidebar.button("Run"):
         st.warning("Please select at least one store code in any group.")
         st.stop()
 
-    bq_client = bigquery.Client()
     try:
-        df = fetch_raw_data(
-            traffic_business_unit=traffic_business_unit,
-            traffic_country=traffic_country,
-            order_company_name_short=order_company_name_short,
-            order_channel=order_channel,
-            order_country=order_country,
-            selected_dates=selected_dates,
-            baseline_dates=baseline_dates,
-            baseline_coefficient=baseline_coefficient,
-            bq_client=bq_client,
-        )
+        all_store_codes = list({
+            str(c).zfill(4) for c in (control_group_1 + control_group_2 + testing_group_1 + testing_group_2)
+            if c
+        })
+
+        def _fetch_main():
+            return fetch_raw_data(
+                traffic_business_unit=traffic_business_unit,
+                traffic_country=traffic_country,
+                order_company_name_short=order_company_name_short,
+                order_channel=order_channel,
+                order_country=order_country,
+                selected_dates=selected_dates,
+                baseline_dates=baseline_dates,
+                baseline_coefficient=baseline_coefficient,
+                bq_client=bigquery.Client(),
+            )
+
+        def _fetch_category():
+            return fetch_promo_article_section_level_raw_data(
+                order_company_name_short=order_company_name_short,
+                order_channel=order_channel,
+                order_country=order_country,
+                selected_dates=selected_dates,
+                baseline_dates=baseline_dates,
+                baseline_coefficient=baseline_coefficient,
+                store_codes=all_store_codes,
+                article_section_groups=article_section_groups,
+                article_sections=article_sections,
+                article_seasons=article_seasons,
+                article_brand_groups=article_brand_groups,
+                price_types=price_types,
+                bq_client=bigquery.Client(),
+            )
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            future_df = executor.submit(_fetch_main)
+            future_category_df = executor.submit(_fetch_category)
+            df = future_df.result()
+            category_df = future_category_df.result()
+
         st.session_state["data"] = df
         st.session_state["sql"] = None
         st.session_state["group_tables"] = build_group_period_tables(
@@ -911,21 +941,6 @@ if st.sidebar.button("Run"):
             promo_dates=promo_dates,
             vat=vat,
         )
-
-        category_df = fetch_promo_article_section_level_raw_data(
-            order_company_name_short=order_company_name_short,
-            order_channel=order_channel,
-            order_country=order_country,
-            selected_dates=selected_dates,
-            baseline_dates=baseline_dates,
-            baseline_coefficient=baseline_coefficient,
-            article_section_groups=article_section_groups,
-            article_sections=article_sections,
-            article_seasons=article_seasons,
-            article_brand_groups=article_brand_groups,
-            price_types=price_types,
-            bq_client=bq_client,
-        )
         category_df["store_code"] = category_df["store_code"].astype(str).str.zfill(4)
         st.session_state["category_data"] = category_df
         st.session_state["category_group_tables"] = {
@@ -933,7 +948,8 @@ if st.sidebar.button("Run"):
             "Group 2": category_df[category_df["store_code"].isin([str(c).zfill(4) for c in control_group_2])],
             "Group 3": category_df[category_df["store_code"].isin([str(c).zfill(4) for c in testing_group_1])],
             "Group 4": category_df[category_df["store_code"].isin([str(c).zfill(4) for c in testing_group_2])],
-            }
+        }
+
     except Exception as e:
         st.session_state["data"] = None
         st.session_state["sql"] = None
@@ -1444,17 +1460,6 @@ if st.session_state.get("category_group_tables"):
         height=dataframe_height(category_promo_impact),
     )
 
-    
-    category_control_existing_split_waterfall = build_selected_categories_existing_non_existing_waterfall_table(
-        group_df=st.session_state["category_group_tables"].get(selected_control_group, pd.DataFrame()),
-        baseline_dates=baseline_dates,
-        promo_dates=promo_dates,
-    )
-    category_testing_existing_split_waterfall = build_selected_categories_existing_non_existing_waterfall_table(
-        group_df=st.session_state["category_group_tables"].get(selected_testing_group, pd.DataFrame()),
-        baseline_dates=baseline_dates,
-        promo_dates=promo_dates,
-    )
     def _render_waterfall_pair(
         control_waterfall_df: pd.DataFrame,
         testing_waterfall_df: pd.DataFrame,
@@ -1479,103 +1484,6 @@ if st.session_state.get("category_group_tables"):
                 ),
                 width='stretch',
             )
-
-    category_control_promo_split_waterfall = build_selected_categories_promo_non_promo_waterfall_table(
-        group_df=st.session_state["category_group_tables"].get(selected_control_group, pd.DataFrame()),
-        baseline_dates=baseline_dates,
-        promo_dates=promo_dates,
-    )
-    category_testing_promo_split_waterfall = build_selected_categories_promo_non_promo_waterfall_table(
-        group_df=st.session_state["category_group_tables"].get(selected_testing_group, pd.DataFrame()),
-        baseline_dates=baseline_dates,
-        promo_dates=promo_dates,
-    )
-    
-
-    category_control_waterfall = build_selected_categories_waterfall_table(
-        group_df=st.session_state["category_group_tables"].get(selected_control_group, pd.DataFrame()),
-        baseline_dates=baseline_dates,
-        promo_dates=promo_dates,
-    )
-    category_testing_waterfall = build_selected_categories_waterfall_table(
-        group_df=st.session_state["category_group_tables"].get(selected_testing_group, pd.DataFrame()),
-        baseline_dates=baseline_dates,
-        promo_dates=promo_dates,
-    )
-   
-
-    category_control_existing_split_quantity_waterfall = (
-        build_selected_categories_existing_non_existing_quantity_waterfall_table(
-            group_df=st.session_state["category_group_tables"].get(selected_control_group, pd.DataFrame()),
-            baseline_dates=baseline_dates,
-            promo_dates=promo_dates,
-        )
-    )
-    category_testing_existing_split_quantity_waterfall = (
-        build_selected_categories_existing_non_existing_quantity_waterfall_table(
-            group_df=st.session_state["category_group_tables"].get(selected_testing_group, pd.DataFrame()),
-            baseline_dates=baseline_dates,
-            promo_dates=promo_dates,
-        )
-    )
-    
-
-    category_control_promo_split_quantity_waterfall = build_selected_categories_promo_non_promo_quantity_waterfall_table(
-        group_df=st.session_state["category_group_tables"].get(selected_control_group, pd.DataFrame()),
-        baseline_dates=baseline_dates,
-        promo_dates=promo_dates,
-    )
-    category_testing_promo_split_quantity_waterfall = build_selected_categories_promo_non_promo_quantity_waterfall_table(
-        group_df=st.session_state["category_group_tables"].get(selected_testing_group, pd.DataFrame()),
-        baseline_dates=baseline_dates,
-        promo_dates=promo_dates,
-    )
-   
-    category_control_quantity_waterfall = build_selected_categories_quantity_waterfall_table(
-        group_df=st.session_state["category_group_tables"].get(selected_control_group, pd.DataFrame()),
-        baseline_dates=baseline_dates,
-        promo_dates=promo_dates,
-    )
-    category_testing_quantity_waterfall = build_selected_categories_quantity_waterfall_table(
-        group_df=st.session_state["category_group_tables"].get(selected_testing_group, pd.DataFrame()),
-        baseline_dates=baseline_dates,
-        promo_dates=promo_dates,
-    )
-   
-    category_control_existing_split_pc1_waterfall = build_selected_categories_existing_non_existing_pc1_waterfall_table(
-        group_df=st.session_state["category_group_tables"].get(selected_control_group, pd.DataFrame()),
-        baseline_dates=baseline_dates,
-        promo_dates=promo_dates,
-    )
-    category_testing_existing_split_pc1_waterfall = build_selected_categories_existing_non_existing_pc1_waterfall_table(
-        group_df=st.session_state["category_group_tables"].get(selected_testing_group, pd.DataFrame()),
-        baseline_dates=baseline_dates,
-        promo_dates=promo_dates,
-    )
-    
-
-    category_control_promo_split_pc1_waterfall = build_selected_categories_promo_non_promo_pc1_waterfall_table(
-        group_df=st.session_state["category_group_tables"].get(selected_control_group, pd.DataFrame()),
-        baseline_dates=baseline_dates,
-        promo_dates=promo_dates,
-    )
-    category_testing_promo_split_pc1_waterfall = build_selected_categories_promo_non_promo_pc1_waterfall_table(
-        group_df=st.session_state["category_group_tables"].get(selected_testing_group, pd.DataFrame()),
-        baseline_dates=baseline_dates,
-        promo_dates=promo_dates,
-    )
-    
-
-    category_control_pc1_waterfall = build_selected_categories_pc1_waterfall_table(
-        group_df=st.session_state["category_group_tables"].get(selected_control_group, pd.DataFrame()),
-        baseline_dates=baseline_dates,
-        promo_dates=promo_dates,
-    )
-    category_testing_pc1_waterfall = build_selected_categories_pc1_waterfall_table(
-        group_df=st.session_state["category_group_tables"].get(selected_testing_group, pd.DataFrame()),
-        baseline_dates=baseline_dates,
-        promo_dates=promo_dates,
-    )
 
 
     article_section_group_toggle = st.toggle(
@@ -1790,6 +1698,36 @@ if st.session_state.get("category_group_tables"):
         value=False,
     )
     if existing_insider_toggle:
+        category_control_existing_split_waterfall = build_selected_categories_existing_non_existing_waterfall_table(
+            group_df=st.session_state["category_group_tables"].get(selected_control_group, pd.DataFrame()),
+            baseline_dates=baseline_dates,
+            promo_dates=promo_dates,
+        )
+        category_testing_existing_split_waterfall = build_selected_categories_existing_non_existing_waterfall_table(
+            group_df=st.session_state["category_group_tables"].get(selected_testing_group, pd.DataFrame()),
+            baseline_dates=baseline_dates,
+            promo_dates=promo_dates,
+        )
+        category_control_existing_split_quantity_waterfall = build_selected_categories_existing_non_existing_quantity_waterfall_table(
+            group_df=st.session_state["category_group_tables"].get(selected_control_group, pd.DataFrame()),
+            baseline_dates=baseline_dates,
+            promo_dates=promo_dates,
+        )
+        category_testing_existing_split_quantity_waterfall = build_selected_categories_existing_non_existing_quantity_waterfall_table(
+            group_df=st.session_state["category_group_tables"].get(selected_testing_group, pd.DataFrame()),
+            baseline_dates=baseline_dates,
+            promo_dates=promo_dates,
+        )
+        category_control_existing_split_pc1_waterfall = build_selected_categories_existing_non_existing_pc1_waterfall_table(
+            group_df=st.session_state["category_group_tables"].get(selected_control_group, pd.DataFrame()),
+            baseline_dates=baseline_dates,
+            promo_dates=promo_dates,
+        )
+        category_testing_existing_split_pc1_waterfall = build_selected_categories_existing_non_existing_pc1_waterfall_table(
+            group_df=st.session_state["category_group_tables"].get(selected_testing_group, pd.DataFrame()),
+            baseline_dates=baseline_dates,
+            promo_dates=promo_dates,
+        )
         st.markdown("**Waterfall - Selected Categories Existing Insider vs New+Non Insider Revenue Bridge**")
         _render_waterfall_pair(category_control_existing_split_waterfall, category_testing_existing_split_waterfall, "Revenue")
         st.markdown("**Waterfall - Selected Categories Existing Insider vs New+Non Insider Quantity Bridge**")
@@ -1798,7 +1736,6 @@ if st.session_state.get("category_group_tables"):
             category_testing_existing_split_quantity_waterfall,
             "Quantity",
         )
-
         st.markdown("**Waterfall - Selected Categories Existing Insider vs New+Non Insider PC1 Bridge**")
         _render_waterfall_pair(
             category_control_existing_split_pc1_waterfall,
@@ -1811,6 +1748,36 @@ if st.session_state.get("category_group_tables"):
         value=False,
     )
     if promo_non_promo_toggle:
+        category_control_promo_split_waterfall = build_selected_categories_promo_non_promo_waterfall_table(
+            group_df=st.session_state["category_group_tables"].get(selected_control_group, pd.DataFrame()),
+            baseline_dates=baseline_dates,
+            promo_dates=promo_dates,
+        )
+        category_testing_promo_split_waterfall = build_selected_categories_promo_non_promo_waterfall_table(
+            group_df=st.session_state["category_group_tables"].get(selected_testing_group, pd.DataFrame()),
+            baseline_dates=baseline_dates,
+            promo_dates=promo_dates,
+        )
+        category_control_promo_split_quantity_waterfall = build_selected_categories_promo_non_promo_quantity_waterfall_table(
+            group_df=st.session_state["category_group_tables"].get(selected_control_group, pd.DataFrame()),
+            baseline_dates=baseline_dates,
+            promo_dates=promo_dates,
+        )
+        category_testing_promo_split_quantity_waterfall = build_selected_categories_promo_non_promo_quantity_waterfall_table(
+            group_df=st.session_state["category_group_tables"].get(selected_testing_group, pd.DataFrame()),
+            baseline_dates=baseline_dates,
+            promo_dates=promo_dates,
+        )
+        category_control_promo_split_pc1_waterfall = build_selected_categories_promo_non_promo_pc1_waterfall_table(
+            group_df=st.session_state["category_group_tables"].get(selected_control_group, pd.DataFrame()),
+            baseline_dates=baseline_dates,
+            promo_dates=promo_dates,
+        )
+        category_testing_promo_split_pc1_waterfall = build_selected_categories_promo_non_promo_pc1_waterfall_table(
+            group_df=st.session_state["category_group_tables"].get(selected_testing_group, pd.DataFrame()),
+            baseline_dates=baseline_dates,
+            promo_dates=promo_dates,
+        )
         st.markdown("**Waterfall - Selected Categories Promo vs Non Promo Revenue Bridge**")
         _render_waterfall_pair(category_control_promo_split_waterfall, category_testing_promo_split_waterfall, "Revenue")
         st.markdown("**Waterfall - Selected Categories Promo vs Non Promo Quantity Bridge**")
@@ -1827,6 +1794,36 @@ if st.session_state.get("category_group_tables"):
         value=False,
     )
     if rp_bp_toggle:
+        category_control_waterfall = build_selected_categories_waterfall_table(
+            group_df=st.session_state["category_group_tables"].get(selected_control_group, pd.DataFrame()),
+            baseline_dates=baseline_dates,
+            promo_dates=promo_dates,
+        )
+        category_testing_waterfall = build_selected_categories_waterfall_table(
+            group_df=st.session_state["category_group_tables"].get(selected_testing_group, pd.DataFrame()),
+            baseline_dates=baseline_dates,
+            promo_dates=promo_dates,
+        )
+        category_control_quantity_waterfall = build_selected_categories_quantity_waterfall_table(
+            group_df=st.session_state["category_group_tables"].get(selected_control_group, pd.DataFrame()),
+            baseline_dates=baseline_dates,
+            promo_dates=promo_dates,
+        )
+        category_testing_quantity_waterfall = build_selected_categories_quantity_waterfall_table(
+            group_df=st.session_state["category_group_tables"].get(selected_testing_group, pd.DataFrame()),
+            baseline_dates=baseline_dates,
+            promo_dates=promo_dates,
+        )
+        category_control_pc1_waterfall = build_selected_categories_pc1_waterfall_table(
+            group_df=st.session_state["category_group_tables"].get(selected_control_group, pd.DataFrame()),
+            baseline_dates=baseline_dates,
+            promo_dates=promo_dates,
+        )
+        category_testing_pc1_waterfall = build_selected_categories_pc1_waterfall_table(
+            group_df=st.session_state["category_group_tables"].get(selected_testing_group, pd.DataFrame()),
+            baseline_dates=baseline_dates,
+            promo_dates=promo_dates,
+        )
         st.markdown("**Waterfall - Selected Categories RP vs BP Revenue Bridge**")
         _render_waterfall_pair(category_control_waterfall, category_testing_waterfall, "Revenue")
         st.markdown("**Waterfall - Selected Categories RP vs BP Quantity Bridge**")

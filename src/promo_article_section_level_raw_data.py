@@ -22,47 +22,67 @@ def build_promo_article_section_level_raw_data_sql(
 ) -> tuple[str, list]:
     """Returns SQL query and parameters for promo article-section-level raw data."""
     sql = f"""
-    
-      SELECT
-      EXTRACT(DATE FROM ordered_at) AS ordered_date,
+    SELECT
+      ordered_date,
       country,
       company_name_short,
       channel,
-      LPAD(CAST(tenant AS STRING), 4, '0') AS store_code,
+      store_code,
       store_name,
-      CAST(mco.order_id AS STRING) AS order_id,
-      COALESCE(article_section_group, 'UNKNOWN') AS article_section_group,
-      COALESCE(article_section, 'UNKNOWN') AS article_section,
-      COALESCE(article_season, 'UNKNOWN') AS article_season,
-      COALESCE(article_brand_group, 'UNKNOWN') AS article_brand_group,
+      article_section_group,
+      article_section,
+      article_season,
+      article_brand_group,
       insider_customer_type,
-      CASE WHEN article_price_red_eur IS NOT NULL THEN 'RP' ELSE 'BP' END AS price_type,
-      CASE WHEN has_promotion THEN 'promo' ELSE 'non-promo' END AS promo_check,
-      
-     ROUND(COALESCE(SUM(revenue_after_cancellations_and_returns_eur_incl_forecast), 0), 2) AS total_revenue,
-     ROUND(COALESCE(SUM(quantity_ordered_after_cancellations_and_returns_incl_forecast), 0), 2) AS total_quantity,
-    ROUND(COALESCE(SUM(profit_contribution_1_eur_incl_forecast), 0), 2) AS total_PC1
-    FROM `{order_table}` AS mco
-    LEFT JOIN UNNEST(order_items) AS oi
-    WHERE channel = @order_channel
-      AND company_name_short = @order_company_name_short
-      AND country = @order_country
-      AND EXTRACT(DATE FROM ordered_at) IN UNNEST(@selected_dates)
-      AND (@store_codes_is_empty OR LPAD(CAST(tenant AS STRING), 4, '0') IN UNNEST(@store_codes))
-      AND (@article_section_groups_is_empty OR COALESCE(article_section_group, 'UNKNOWN') IN UNNEST(@article_section_groups))
-      AND (@article_sections_is_empty OR COALESCE(article_section, 'UNKNOWN') IN UNNEST(@article_sections))
-      AND (@article_seasons_is_empty OR COALESCE(article_season, 'UNKNOWN') IN UNNEST(@article_seasons))
-      AND (@article_brand_groups_is_empty OR COALESCE(article_brand_group, 'UNKNOWN') IN UNNEST(@article_brand_groups))
-      AND (@insider_customer_types_is_empty OR insider_customer_type IN UNNEST(@insider_customer_types))
-      AND (
-        @price_types_is_empty
-        OR CASE WHEN article_price_red_eur IS NOT NULL THEN 'RP' ELSE 'BP' END IN UNNEST(@price_types)
-      )
-      AND (
-        @promo_checks_is_empty
-        OR CASE WHEN has_promotion THEN 'promo' ELSE 'non-promo' END IN UNNEST(@promo_checks)
-      )
-    GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12,13,14
+      price_type,
+      promo_check,
+      ROUND(COALESCE(SUM(item_revenue), 0), 2) AS total_revenue,
+      ROUND(COALESCE(SUM(item_quantity), 0), 2) AS total_quantity,
+      ROUND(COALESCE(SUM(item_pc1), 0), 2) AS total_PC1,
+      MAX(store_order_count) AS order_count
+    FROM (
+      SELECT
+        EXTRACT(DATE FROM ordered_at) AS ordered_date,
+        country,
+        company_name_short,
+        channel,
+        LPAD(CAST(tenant AS STRING), 4, '0') AS store_code,
+        store_name,
+        COALESCE(article_section_group, 'UNKNOWN') AS article_section_group,
+        COALESCE(article_section, 'UNKNOWN') AS article_section,
+        COALESCE(article_season, 'UNKNOWN') AS article_season,
+        COALESCE(article_brand_group, 'UNKNOWN') AS article_brand_group,
+        insider_customer_type,
+        CASE WHEN article_price_red_eur IS NOT NULL THEN 'RP' ELSE 'BP' END AS price_type,
+        CASE WHEN has_promotion THEN 'promo' ELSE 'non-promo' END AS promo_check,
+        revenue_after_cancellations_and_returns_eur_incl_forecast AS item_revenue,
+        quantity_ordered_after_cancellations_and_returns_incl_forecast AS item_quantity,
+        profit_contribution_1_eur_incl_forecast AS item_pc1,
+        COUNT(DISTINCT order_id) OVER (
+          PARTITION BY EXTRACT(DATE FROM ordered_at), LPAD(CAST(tenant AS STRING), 4, '0')
+        ) AS store_order_count
+      FROM `{order_table}` AS mco
+      LEFT JOIN UNNEST(order_items) AS oi
+      WHERE channel = @order_channel
+        AND company_name_short = @order_company_name_short
+        AND country = @order_country
+        AND EXTRACT(DATE FROM ordered_at) IN UNNEST(@selected_dates)
+        AND (@store_codes_is_empty OR LPAD(CAST(tenant AS STRING), 4, '0') IN UNNEST(@store_codes))
+        AND (@article_section_groups_is_empty OR COALESCE(article_section_group, 'UNKNOWN') IN UNNEST(@article_section_groups))
+        AND (@article_sections_is_empty OR COALESCE(article_section, 'UNKNOWN') IN UNNEST(@article_sections))
+        AND (@article_seasons_is_empty OR COALESCE(article_season, 'UNKNOWN') IN UNNEST(@article_seasons))
+        AND (@article_brand_groups_is_empty OR COALESCE(article_brand_group, 'UNKNOWN') IN UNNEST(@article_brand_groups))
+        AND (@insider_customer_types_is_empty OR insider_customer_type IN UNNEST(@insider_customer_types))
+        AND (
+          @price_types_is_empty
+          OR CASE WHEN article_price_red_eur IS NOT NULL THEN 'RP' ELSE 'BP' END IN UNNEST(@price_types)
+        )
+        AND (
+          @promo_checks_is_empty
+          OR CASE WHEN has_promotion THEN 'promo' ELSE 'non-promo' END IN UNNEST(@promo_checks)
+        )
+    )
+    GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12,13
     """
 
     store_codes = store_codes or []
@@ -188,7 +208,7 @@ def build_selected_categories_funnel_table(
 
     def _metrics(df: pd.DataFrame, order_scale: float = 1.0) -> dict[str, float]:
         revenue = pd.to_numeric(df["total_revenue"], errors="coerce")
-        total_orders = float(df["order_id"].dropna().nunique()) * order_scale if "order_id" in df.columns else float("nan")
+        total_orders = float(df.groupby(["ordered_date", "store_code"])["order_count"].first().sum()) * order_scale if "order_count" in df.columns else float("nan")
         total_quantity = pd.to_numeric(df["total_quantity"], errors="coerce").sum(min_count=1)
         total_revenue = revenue.sum(min_count=1)
         total_pc1 = pd.to_numeric(df["total_PC1"], errors="coerce").sum(min_count=1)
