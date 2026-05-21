@@ -4,7 +4,6 @@ from datetime import date, timedelta
 import json
 import base64
 import concurrent.futures
-import time
 from google.cloud import bigquery
 import pandas as pd
 import altair as alt
@@ -889,13 +888,13 @@ if st.sidebar.button("Run"):
         st.stop()
 
     try:
-        # --- TIMING START (temporary) ---
-        _t0 = time.time()
-        _timings = {}
+        all_store_codes = list({
+            str(c).zfill(4) for c in (control_group_1 + control_group_2 + testing_group_1 + testing_group_2)
+            if c
+        })
 
         def _fetch_main():
-            _t = time.time()
-            result = fetch_raw_data(
+            return fetch_raw_data(
                 traffic_business_unit=traffic_business_unit,
                 traffic_country=traffic_country,
                 order_company_name_short=order_company_name_short,
@@ -906,17 +905,9 @@ if st.sidebar.button("Run"):
                 baseline_coefficient=baseline_coefficient,
                 bq_client=bigquery.Client(),
             )
-            _timings["fetch_raw_data"] = time.time() - _t
-            return result
-
-        all_store_codes = list({
-            str(c).zfill(4) for c in (control_group_1 + control_group_2 + testing_group_1 + testing_group_2)
-            if c
-        })
 
         def _fetch_category():
-            _t = time.time()
-            result = fetch_promo_article_section_level_raw_data(
+            return fetch_promo_article_section_level_raw_data(
                 order_company_name_short=order_company_name_short,
                 order_channel=order_channel,
                 order_country=order_country,
@@ -931,19 +922,12 @@ if st.sidebar.button("Run"):
                 price_types=price_types,
                 bq_client=bigquery.Client(),
             )
-            _timings["fetch_category"] = time.time() - _t
-            return result
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
             future_df = executor.submit(_fetch_main)
             future_category_df = executor.submit(_fetch_category)
             df = future_df.result()
             category_df = future_category_df.result()
-
-        _t1 = time.time()
-        st.info(f"[TIMING] fetch_raw_data：{_timings.get('fetch_raw_data', '?'):.1f}s")
-        st.info(f"[TIMING] fetch_category_data：{_timings.get('fetch_category', '?'):.1f}s")
-        st.info(f"[TIMING] 两个 BQ 查询并行总耗时：{_t1 - _t0:.1f}s")
 
         st.session_state["data"] = df
         st.session_state["sql"] = None
@@ -957,9 +941,6 @@ if st.sidebar.button("Run"):
             promo_dates=promo_dates,
             vat=vat,
         )
-        _t2 = time.time()
-        st.info(f"[TIMING] build_group_period_tables：{_t2 - _t1:.1f}s")
-
         category_df["store_code"] = category_df["store_code"].astype(str).str.zfill(4)
         st.session_state["category_data"] = category_df
         st.session_state["category_group_tables"] = {
@@ -968,10 +949,6 @@ if st.sidebar.button("Run"):
             "Group 3": category_df[category_df["store_code"].isin([str(c).zfill(4) for c in testing_group_1])],
             "Group 4": category_df[category_df["store_code"].isin([str(c).zfill(4) for c in testing_group_2])],
         }
-        _t3 = time.time()
-        st.info(f"[TIMING] category_group_tables 分组：{_t3 - _t2:.1f}s")
-        st.info(f"[TIMING] 总计：{_t3 - _t0:.1f}s")
-        # --- TIMING END (temporary) ---
 
     except Exception as e:
         st.session_state["data"] = None
