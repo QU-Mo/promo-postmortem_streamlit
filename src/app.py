@@ -909,6 +909,11 @@ if st.sidebar.button("Run"):
             _timings["fetch_raw_data"] = time.time() - _t
             return result
 
+        all_store_codes = list({
+            str(c) for c in (control_group_1 + control_group_2 + testing_group_1 + testing_group_2)
+            if c
+        })
+
         def _fetch_category():
             _t = time.time()
             result = fetch_promo_article_section_level_raw_data(
@@ -918,6 +923,7 @@ if st.sidebar.button("Run"):
                 selected_dates=selected_dates,
                 baseline_dates=baseline_dates,
                 baseline_coefficient=baseline_coefficient,
+                store_codes=all_store_codes,
                 article_section_groups=article_section_groups,
                 article_sections=article_sections,
                 article_seasons=article_seasons,
