@@ -910,7 +910,7 @@ if st.sidebar.button("Run"):
             return result
 
         all_store_codes = list({
-            str(c) for c in (control_group_1 + control_group_2 + testing_group_1 + testing_group_2)
+            str(c).zfill(4) for c in (control_group_1 + control_group_2 + testing_group_1 + testing_group_2)
             if c
         })
 
