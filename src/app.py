@@ -888,14 +888,14 @@ if st.sidebar.button("Run"):
         st.warning("Please select at least one store code in any group.")
         st.stop()
 
-    bq_client = bigquery.Client()
     try:
         # --- TIMING START (temporary) ---
         _t0 = time.time()
+        _timings = {}
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-            future_df = executor.submit(
-                fetch_raw_data,
+        def _fetch_main():
+            _t = time.time()
+            result = fetch_raw_data(
                 traffic_business_unit=traffic_business_unit,
                 traffic_country=traffic_country,
                 order_company_name_short=order_company_name_short,
@@ -904,10 +904,14 @@ if st.sidebar.button("Run"):
                 selected_dates=selected_dates,
                 baseline_dates=baseline_dates,
                 baseline_coefficient=baseline_coefficient,
-                bq_client=bq_client,
+                bq_client=bigquery.Client(),
             )
-            future_category_df = executor.submit(
-                fetch_promo_article_section_level_raw_data,
+            _timings["fetch_raw_data"] = time.time() - _t
+            return result
+
+        def _fetch_category():
+            _t = time.time()
+            result = fetch_promo_article_section_level_raw_data(
                 order_company_name_short=order_company_name_short,
                 order_channel=order_channel,
                 order_country=order_country,
@@ -919,13 +923,21 @@ if st.sidebar.button("Run"):
                 article_seasons=article_seasons,
                 article_brand_groups=article_brand_groups,
                 price_types=price_types,
-                bq_client=bq_client,
+                bq_client=bigquery.Client(),
             )
+            _timings["fetch_category"] = time.time() - _t
+            return result
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            future_df = executor.submit(_fetch_main)
+            future_category_df = executor.submit(_fetch_category)
             df = future_df.result()
             category_df = future_category_df.result()
 
         _t1 = time.time()
-        st.info(f"[TIMING] 两个 BQ 查询并行完成：{_t1 - _t0:.1f}s")
+        st.info(f"[TIMING] fetch_raw_data：{_timings.get('fetch_raw_data', '?'):.1f}s")
+        st.info(f"[TIMING] fetch_category_data：{_timings.get('fetch_category', '?'):.1f}s")
+        st.info(f"[TIMING] 两个 BQ 查询并行总耗时：{_t1 - _t0:.1f}s")
 
         st.session_state["data"] = df
         st.session_state["sql"] = None
