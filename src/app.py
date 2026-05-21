@@ -3,6 +3,7 @@ import streamlit.components.v1 as components
 from datetime import date, timedelta
 import json
 import base64
+import concurrent.futures
 from google.cloud import bigquery
 import pandas as pd
 import altair as alt
@@ -888,17 +889,37 @@ if st.sidebar.button("Run"):
 
     bq_client = bigquery.Client()
     try:
-        df = fetch_raw_data(
-            traffic_business_unit=traffic_business_unit,
-            traffic_country=traffic_country,
-            order_company_name_short=order_company_name_short,
-            order_channel=order_channel,
-            order_country=order_country,
-            selected_dates=selected_dates,
-            baseline_dates=baseline_dates,
-            baseline_coefficient=baseline_coefficient,
-            bq_client=bq_client,
-        )
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            future_df = executor.submit(
+                fetch_raw_data,
+                traffic_business_unit=traffic_business_unit,
+                traffic_country=traffic_country,
+                order_company_name_short=order_company_name_short,
+                order_channel=order_channel,
+                order_country=order_country,
+                selected_dates=selected_dates,
+                baseline_dates=baseline_dates,
+                baseline_coefficient=baseline_coefficient,
+                bq_client=bq_client,
+            )
+            future_category_df = executor.submit(
+                fetch_promo_article_section_level_raw_data,
+                order_company_name_short=order_company_name_short,
+                order_channel=order_channel,
+                order_country=order_country,
+                selected_dates=selected_dates,
+                baseline_dates=baseline_dates,
+                baseline_coefficient=baseline_coefficient,
+                article_section_groups=article_section_groups,
+                article_sections=article_sections,
+                article_seasons=article_seasons,
+                article_brand_groups=article_brand_groups,
+                price_types=price_types,
+                bq_client=bq_client,
+            )
+            df = future_df.result()
+            category_df = future_category_df.result()
+
         st.session_state["data"] = df
         st.session_state["sql"] = None
         st.session_state["group_tables"] = build_group_period_tables(
@@ -911,21 +932,6 @@ if st.sidebar.button("Run"):
             promo_dates=promo_dates,
             vat=vat,
         )
-
-        category_df = fetch_promo_article_section_level_raw_data(
-            order_company_name_short=order_company_name_short,
-            order_channel=order_channel,
-            order_country=order_country,
-            selected_dates=selected_dates,
-            baseline_dates=baseline_dates,
-            baseline_coefficient=baseline_coefficient,
-            article_section_groups=article_section_groups,
-            article_sections=article_sections,
-            article_seasons=article_seasons,
-            article_brand_groups=article_brand_groups,
-            price_types=price_types,
-            bq_client=bq_client,
-        )
         category_df["store_code"] = category_df["store_code"].astype(str).str.zfill(4)
         st.session_state["category_data"] = category_df
         st.session_state["category_group_tables"] = {
@@ -933,7 +939,7 @@ if st.sidebar.button("Run"):
             "Group 2": category_df[category_df["store_code"].isin([str(c).zfill(4) for c in control_group_2])],
             "Group 3": category_df[category_df["store_code"].isin([str(c).zfill(4) for c in testing_group_1])],
             "Group 4": category_df[category_df["store_code"].isin([str(c).zfill(4) for c in testing_group_2])],
-            }
+        }
     except Exception as e:
         st.session_state["data"] = None
         st.session_state["sql"] = None
